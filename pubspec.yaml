@@ -1,0 +1,41 @@
+name: kapis
+description: Peer-to-peer pick-up-only (Gel-Al) second-hand item & furniture donation app.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State & Architecture
+  flutter_riverpod: ^2.6.1
+
+  # Firebase Backend & Hosted Free-Tier Gemini AI
+  firebase_core: ^3.8.1
+  firebase_auth: ^5.3.4
+  cloud_firestore: ^5.5.0
+  firebase_storage: ^12.3.7
+  firebase_ai: ^4.0.0
+
+  # Maps, 100m Geofence & QR Handover
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  geolocator: ^13.0.2
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^6.0.2
+
+  # Lightweight Local Session/Prefs & Media
+  shared_preferences: ^2.3.3
+  image_picker: ^1.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
