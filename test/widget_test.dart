@@ -6,31 +6,26 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_ui/material_ui.dart';
 
-import 'package:kapis/main.dart';
+import 'package:kapis/app.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('shows the Kapış pick-up-only landing page', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const KapisApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Kapış'), findsOneWidget);
+    expect(
+      find.text('Kullanılabilir eşyalar, yeni sahipleriyle buluşsun.'),
+      findsOneWidget,
+    );
+    expect(find.text('Ücretsiz paylaş, yakından gel-al.'), findsOneWidget);
   });
 
   testWidgets('Meets accessibility guidelines', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(const KapisApp());
 
     // Checks that tappable nodes have a minimum size of 48 by 48 pixels
     // for Android.
