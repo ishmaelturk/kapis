@@ -1,0 +1,77 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../data/firebase/firebase_auth_repository.dart';
+import '../data/firebase/firebase_listing_image_storage.dart';
+import '../data/firebase/firebase_listing_repository.dart';
+import '../domain/repositories/auth_repository.dart';
+import '../domain/repositories/listing_image_storage.dart';
+import '../domain/repositories/listing_repository.dart';
+import '../domain/services/student_email_domain_validator.dart';
+import 'firebase_runtime_config.dart';
+
+final firebaseRuntimeConfigProvider = Provider<FirebaseRuntimeConfig>(
+  (ref) => FirebaseRuntimeConfig.fromEnvironment(),
+);
+
+final firebaseAppProvider = FutureProvider<FirebaseApp>((ref) {
+  final options = ref
+      .watch(firebaseRuntimeConfigProvider)
+      .toFirebaseOptions(platform: defaultTargetPlatform);
+  return Firebase.initializeApp(options: options);
+});
+
+final firebaseAuthProvider = FutureProvider<FirebaseAuth>((ref) async {
+  final app = await ref.watch(firebaseAppProvider.future);
+  return FirebaseAuth.instanceFor(app: app);
+});
+
+final firestoreProvider = FutureProvider<FirebaseFirestore>((ref) async {
+  final app = await ref.watch(firebaseAppProvider.future);
+  return FirebaseFirestore.instanceFor(app: app);
+});
+
+final firebaseStorageProvider = FutureProvider<FirebaseStorage>((ref) async {
+  final app = await ref.watch(firebaseAppProvider.future);
+  return FirebaseStorage.instanceFor(app: app);
+});
+
+final studentEmailDomainValidatorProvider =
+    Provider<StudentEmailDomainValidator>((ref) {
+      const configuredDomains = String.fromEnvironment(
+        'KAPIS_STUDENT_EMAIL_DOMAINS',
+      );
+      return StudentEmailDomainValidator(
+        approvedDomains: configuredDomains
+            .split(',')
+            .where((domain) => domain.trim().isNotEmpty),
+      );
+    });
+
+final authRepositoryProvider = FutureProvider<AuthRepository>((ref) async {
+  final authFuture = ref.watch(firebaseAuthProvider.future);
+  final domainValidator = ref.watch(studentEmailDomainValidatorProvider);
+  final auth = await authFuture;
+  return FirebaseAuthRepository(
+    auth,
+    domainValidator,
+  );
+});
+
+final listingRepositoryProvider = FutureProvider<ListingRepository>((
+  ref,
+) async {
+  final firestore = await ref.watch(firestoreProvider.future);
+  return FirebaseListingRepository(firestore);
+});
+
+final listingImageStorageProvider = FutureProvider<ListingImageStorage>((
+  ref,
+) async {
+  final storage = await ref.watch(firebaseStorageProvider.future);
+  return FirebaseListingImageStorage(storage);
+});

@@ -1,5 +1,3 @@
-import 'pickup_coordinates.dart';
-
 enum ListingCategory {
   furniture('Mobilya'),
   seating('Oturma'),
@@ -23,12 +21,7 @@ enum ItemCondition {
   final String label;
 }
 
-enum ListingStatus {
-  available,
-  reserved,
-  handedOver,
-  withdrawn,
-}
+enum ListingStatus { available, reserved, handedOver, withdrawn }
 
 final class Listing {
   Listing({
@@ -36,19 +29,25 @@ final class Listing {
     required this.donorId,
     required this.title,
     required this.description,
+    required this.pickupArea,
     required this.category,
     required this.condition,
     required List<String> tags,
-    required this.pickupCoordinates,
     required this.createdAt,
     this.status = ListingStatus.available,
   }) : tags = List.unmodifiable(tags) {
     _requireNonBlank(id, 'id');
     _requireNonBlank(donorId, 'donorId');
-    _requireNonBlank(title, 'title');
-    _requireNonBlank(description, 'description');
-    if (this.tags.any((tag) => tag.trim().isEmpty)) {
-      throw ArgumentError.value(tags, 'tags', 'Tags must not be blank.');
+    _requireLength(title, 'title', 100);
+    _requireLength(description, 'description', 1000);
+    _requireLength(pickupArea, 'pickupArea', 100);
+    if (this.tags.length > 10 ||
+        this.tags.any((tag) => tag.trim().isEmpty || tag.length > 32)) {
+      throw ArgumentError.value(
+        tags,
+        'tags',
+        'Use at most 10 non-blank tags of at most 32 characters.',
+      );
     }
   }
 
@@ -56,10 +55,10 @@ final class Listing {
   final String donorId;
   final String title;
   final String description;
+  final String pickupArea;
   final ListingCategory category;
   final ItemCondition condition;
   final List<String> tags;
-  final PickupCoordinates pickupCoordinates;
   final DateTime createdAt;
   final ListingStatus status;
 
@@ -69,5 +68,16 @@ final class Listing {
 void _requireNonBlank(String value, String name) {
   if (value.trim().isEmpty) {
     throw ArgumentError.value(value, name, 'Must not be blank.');
+  }
+}
+
+void _requireLength(String value, String name, int maximumLength) {
+  _requireNonBlank(value, name);
+  if (value.length > maximumLength) {
+    throw ArgumentError.value(
+      value,
+      name,
+      'Must contain at most $maximumLength characters.',
+    );
   }
 }

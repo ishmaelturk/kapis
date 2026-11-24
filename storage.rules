@@ -1,0 +1,23 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function listingOwner(listingId) {
+      return request.auth != null &&
+        firestore.get(
+          /databases/(default)/documents/listings/$(listingId)
+        ).data.donorId == request.auth.uid;
+    }
+
+    match /listing-images/{listingId}/{imageId} {
+      allow read: if true;
+
+      allow create, update: if listingOwner(listingId) &&
+        request.resource.size > 0 &&
+        request.resource.size <= 10 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/(jpeg|png|webp)');
+
+      allow delete: if listingOwner(listingId);
+    }
+  }
+}

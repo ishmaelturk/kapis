@@ -1,0 +1,141 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function listingPath(listingId) {
+      return /databases/$(database)/documents/listings/$(listingId);
+    }
+
+    function reservationPath(listingId) {
+      return /databases/$(database)/documents/listings/$(listingId)/private/reservation;
+    }
+
+    function isOwner(listingId) {
+      return signedIn() &&
+        get(listingPath(listingId)).data.donorId == request.auth.uid;
+    }
+
+    function canReadPickupPoint(listingId) {
+      return signedIn() &&
+        (isOwner(listingId) ||
+          (get(listingPath(listingId)).data.status == 'reserved' &&
+            exists(reservationPath(listingId)) &&
+            get(reservationPath(listingId)).data.receiverId == request.auth.uid));
+    }
+
+    function validListing(data) {
+      return data.keys().hasAll([
+          'donorId',
+          'title',
+          'description',
+          'pickupArea',
+          'category',
+          'condition',
+          'tags',
+          'status',
+          'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'donorId',
+          'title',
+          'description',
+          'pickupArea',
+          'category',
+          'condition',
+          'tags',
+          'status',
+          'createdAt'
+        ]) &&
+        data.donorId is string &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+        data.description is string &&
+        data.description.size() > 0 && data.description.size() <= 1000 &&
+        data.pickupArea is string &&
+        data.pickupArea.size() > 0 && data.pickupArea.size() <= 100 &&
+        data.category in [
+          'furniture',
+          'seating',
+          'tablesAndDesks',
+          'lighting',
+          'householdGoods',
+          'other'
+        ] &&
+        data.condition in ['likeNew', 'good', 'fair'] &&
+        data.tags is list && data.tags.size() <= 10 &&
+        data.status in ['available', 'reserved', 'handedOver', 'withdrawn'] &&
+        data.createdAt is timestamp;
+    }
+
+    function validReservation(listingId) {
+      return signedIn() &&
+        resource.data.status == 'available' &&
+        request.resource.data.status == 'reserved' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        existsAfter(reservationPath(listingId)) &&
+        getAfter(reservationPath(listingId)).data.receiverId == request.auth.uid;
+    }
+
+    match /listings/{listingId} {
+      allow get, list: if true;
+
+      allow create: if signedIn() &&
+        validListing(request.resource.data) &&
+        request.resource.data.donorId == request.auth.uid &&
+        request.resource.data.status == 'available' &&
+        request.resource.data.createdAt == request.time;
+
+      allow update: if validReservation(listingId) ||
+        (signedIn() &&
+          resource.data.donorId == request.auth.uid &&
+          request.resource.data.donorId == resource.data.donorId &&
+          validListing(request.resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title',
+            'description',
+            'pickupArea',
+            'category',
+            'condition',
+            'tags',
+            'status'
+          ]) &&
+          resource.data.status == 'available' &&
+          request.resource.data.status in ['available', 'withdrawn']);
+
+      allow delete: if false;
+
+      match /private/pickup {
+        allow read: if canReadPickupPoint(listingId);
+
+        allow create, update: if signedIn() &&
+          getAfter(listingPath(listingId)).data.donorId == request.auth.uid &&
+          request.resource.data.keys().hasOnly(['latitude', 'longitude']) &&
+          request.resource.data.latitude is number &&
+          request.resource.data.latitude >= -90 &&
+          request.resource.data.latitude <= 90 &&
+          request.resource.data.longitude is number &&
+          request.resource.data.longitude >= -180 &&
+          request.resource.data.longitude <= 180;
+
+        allow delete: if isOwner(listingId);
+      }
+
+      match /private/reservation {
+        allow read: if canReadPickupPoint(listingId);
+
+        allow create: if signedIn() &&
+          request.resource.data.keys().hasOnly(['receiverId', 'createdAt']) &&
+          request.resource.data.receiverId == request.auth.uid &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.receiverId !=
+            get(listingPath(listingId)).data.donorId &&
+          getAfter(listingPath(listingId)).data.status == 'reserved';
+
+        allow update, delete: if false;
+      }
+    }
+  }
+}

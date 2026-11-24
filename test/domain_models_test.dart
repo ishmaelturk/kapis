@@ -24,10 +24,10 @@ void main() {
         donorId: 'donor-1',
         title: 'Desk',
         description: 'A sturdy desk.',
+        pickupArea: 'Kadıköy',
         category: ListingCategory.tablesAndDesks,
         condition: ItemCondition.good,
         tags: tags,
-        pickupCoordinates: PickupCoordinates(latitude: 41, longitude: 29),
         createdAt: DateTime.utc(2026),
       );
       tags.add('extra');
@@ -44,10 +44,10 @@ void main() {
           donorId: 'donor-1',
           title: ' ',
           description: 'A sturdy desk.',
+          pickupArea: 'Kadıköy',
           category: ListingCategory.tablesAndDesks,
           condition: ItemCondition.good,
           tags: const [],
-          pickupCoordinates: PickupCoordinates(latitude: 41, longitude: 29),
           createdAt: DateTime.utc(2026),
         ),
         throwsArgumentError,
