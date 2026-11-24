@@ -11,7 +11,10 @@ import '../../../domain/repositories/auth_repository.dart';
 import '../../../firebase/firebase_providers.dart';
 import '../../../firebase/firebase_runtime_config.dart';
 import '../handover/handover_screen.dart';
+import 'listing_form_screen.dart';
+import 'my_listings_screen.dart';
 import 'pickup_map_view.dart';
+import '../../settings/presentation/settings_screen.dart';
 
 class ListingDiscoveryScreen extends ConsumerStatefulWidget {
   const ListingDiscoveryScreen({super.key});
@@ -19,6 +22,11 @@ class ListingDiscoveryScreen extends ConsumerStatefulWidget {
   @override
   ConsumerState<ListingDiscoveryScreen> createState() =>
       _ListingDiscoveryScreenState();
+}
+
+void _openDrawerPage(BuildContext context, Widget page) {
+  Navigator.of(context).pop();
+  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
 }
 
 class _ListingDiscoveryScreenState
@@ -122,6 +130,60 @@ class _ListingDiscoveryScreenState
 
     return Scaffold(
       appBar: AppBar(title: const Text('Yakınındaki bağışlar')),
+      drawer: Drawer(
+        child: SafeArea(
+          child: Column(
+            children: [
+              DrawerHeader(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Icon(
+                        Icons.volunteer_activism_outlined,
+                        color: Theme.of(context).colorScheme.primary,
+                        size: 36,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Kapış',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const Text('Ücretsiz eşya paylaşımı'),
+                    ],
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.search),
+                title: const Text('Bağışları keşfet'),
+                onTap: () => Navigator.of(context).pop(),
+              ),
+              ListTile(
+                leading: const Icon(Icons.add_circle_outline),
+                title: const Text('Eşya bağışla'),
+                onTap: () =>
+                    _openDrawerPage(context, const ListingFormScreen()),
+              ),
+              ListTile(
+                leading: const Icon(Icons.inventory_2_outlined),
+                title: const Text('Bağışlarım'),
+                onTap: () => _openDrawerPage(context, const MyListingsScreen()),
+              ),
+              ListTile(
+                leading: const Icon(Icons.settings_outlined),
+                title: const Text('Ayarlar'),
+                onTap: () => _openDrawerPage(context, const SettingsScreen()),
+              ),
+            ],
+          ),
+        ),
+      ),
       body: Column(
         children: [
           Padding(

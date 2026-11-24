@@ -31,6 +31,56 @@ void main() {
     expect(repository.saveCount, 2);
   });
 
+  test('persists the selected theme mode before publishing it', () async {
+    final repository = _MemoryAppPreferencesRepository();
+    final container = ProviderContainer(
+      overrides: [
+        appPreferencesRepositoryProvider.overrideWithValue(repository),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(appPreferencesProvider.future);
+    await container
+        .read(appPreferencesProvider.notifier)
+        .setThemeMode(AppThemeMode.dark);
+
+    expect(
+      container.read(appPreferencesProvider).requireValue.themeMode,
+      AppThemeMode.dark,
+    );
+    expect(repository.value.themeMode, AppThemeMode.dark);
+    expect(repository.saveCount, 1);
+  });
+
+  test('persists accessibility preferences together', () async {
+    final repository = _MemoryAppPreferencesRepository();
+    final container = ProviderContainer(
+      overrides: [
+        appPreferencesRepositoryProvider.overrideWithValue(repository),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(appPreferencesProvider.future);
+    final controller = container.read(appPreferencesProvider.notifier);
+    await controller.setAccessibilityTextSize(AccessibilityTextSize.extraLarge);
+    await controller.setHighContrastEnabled(true);
+    await controller.setReduceMotion(true);
+
+    final preferences = container.read(appPreferencesProvider).requireValue;
+    expect(preferences.accessibilityTextSize, AccessibilityTextSize.extraLarge);
+    expect(preferences.highContrastEnabled, isTrue);
+    expect(preferences.reduceMotion, isTrue);
+    expect(
+      repository.value.accessibilityTextSize,
+      AccessibilityTextSize.extraLarge,
+    );
+    expect(repository.value.highContrastEnabled, isTrue);
+    expect(repository.value.reduceMotion, isTrue);
+    expect(repository.saveCount, 3);
+  });
+
   test('surfaces storage failures and keeps the previous state', () async {
     final repository = _MemoryAppPreferencesRepository()..failWrites = true;
     final container = ProviderContainer(

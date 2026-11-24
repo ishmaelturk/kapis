@@ -13,7 +13,7 @@ final class SharedPreferencesAppPreferencesRepository
   }) : _preferences = preferences ?? SharedPreferencesAsync();
 
   static const _storageKey = 'kapis.app_preferences';
-  static const _schemaVersion = 1;
+  static const _schemaVersion = 3;
 
   final SharedPreferencesAsync _preferences;
 
@@ -28,9 +28,12 @@ final class SharedPreferencesAppPreferencesRepository
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('Stored app preferences must be an object.');
     }
-    if (decoded['schemaVersion'] != _schemaVersion) {
+    final schemaVersion = decoded['schemaVersion'];
+    if (schemaVersion != 1 &&
+        schemaVersion != 2 &&
+        schemaVersion != _schemaVersion) {
       throw FormatException(
-        'Unsupported app preferences schema: ${decoded['schemaVersion']}.',
+        'Unsupported app preferences schema: $schemaVersion.',
       );
     }
 
@@ -39,6 +42,24 @@ final class SharedPreferencesAppPreferencesRepository
       throw const FormatException('Stored role mode is missing or invalid.');
     }
     final roleMode = _roleModeFromName(roleName);
+    final storedThemeMode = decoded['themeMode'];
+    final themeMode = schemaVersion == 1 && storedThemeMode == null
+        ? AppThemeMode.system
+        : _themeModeFromName(storedThemeMode);
+    final storedTextSize = decoded['accessibilityTextSize'];
+    final accessibilityTextSize = schemaVersion < 3 && storedTextSize == null
+        ? AccessibilityTextSize.normal
+        : _accessibilityTextSizeFromName(storedTextSize);
+    final highContrastEnabled = _readAccessibilityBool(
+      decoded['highContrastEnabled'],
+      schemaVersion,
+      'high contrast',
+    );
+    final reduceMotion = _readAccessibilityBool(
+      decoded['reduceMotion'],
+      schemaVersion,
+      'reduce motion',
+    );
     final onboardingComplete = decoded['onboardingComplete'];
     if (onboardingComplete is! bool) {
       throw const FormatException(
@@ -52,6 +73,10 @@ final class SharedPreferencesAppPreferencesRepository
 
     return AppPreferences(
       roleMode: roleMode,
+      themeMode: themeMode,
+      accessibilityTextSize: accessibilityTextSize,
+      highContrastEnabled: highContrastEnabled,
+      reduceMotion: reduceMotion,
       onboardingComplete: onboardingComplete,
       cachedPickupCoordinates: _readCoordinates(
         decoded['cachedPickupCoordinates'],
@@ -67,6 +92,10 @@ final class SharedPreferencesAppPreferencesRepository
       jsonEncode({
         'schemaVersion': _schemaVersion,
         'roleMode': preferences.roleMode.name,
+        'themeMode': preferences.themeMode.name,
+        'accessibilityTextSize': preferences.accessibilityTextSize.name,
+        'highContrastEnabled': preferences.highContrastEnabled,
+        'reduceMotion': preferences.reduceMotion,
         'onboardingComplete': preferences.onboardingComplete,
         'cachedPickupCoordinates': _coordinatesToJson(
           preferences.cachedPickupCoordinates,
@@ -83,6 +112,42 @@ final class SharedPreferencesAppPreferencesRepository
       }
     }
     throw FormatException('Unknown stored role mode: $name.');
+  }
+
+  AppThemeMode _themeModeFromName(Object? storedValue) {
+    if (storedValue is! String) {
+      throw const FormatException('Stored theme mode is missing or invalid.');
+    }
+    for (final themeMode in AppThemeMode.values) {
+      if (themeMode.name == storedValue) {
+        return themeMode;
+      }
+    }
+    throw FormatException('Unknown stored theme mode: $storedValue.');
+  }
+
+  AccessibilityTextSize _accessibilityTextSizeFromName(Object? storedValue) {
+    if (storedValue is! String) {
+      throw const FormatException(
+        'Stored accessibility text size is missing or invalid.',
+      );
+    }
+    for (final textSize in AccessibilityTextSize.values) {
+      if (textSize.name == storedValue) {
+        return textSize;
+      }
+    }
+    throw FormatException('Unknown accessibility text size: $storedValue.');
+  }
+
+  bool _readAccessibilityBool(Object? value, int schemaVersion, String name) {
+    if (schemaVersion < 3 && value == null) {
+      return false;
+    }
+    if (value is! bool) {
+      throw FormatException('Stored $name preference is missing or invalid.');
+    }
+    return value;
   }
 
   Map<String, double>? _coordinatesToJson(PickupCoordinates? coordinates) {

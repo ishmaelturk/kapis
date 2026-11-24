@@ -29,6 +29,24 @@ final class AppPreferencesController extends AsyncNotifier<AppPreferences> {
     return _update((current) => current.copyWith(roleMode: roleMode));
   }
 
+  Future<void> setThemeMode(AppThemeMode themeMode) {
+    return _update((current) => current.copyWith(themeMode: themeMode));
+  }
+
+  Future<void> setAccessibilityTextSize(AccessibilityTextSize textSize) {
+    return _update(
+      (current) => current.copyWith(accessibilityTextSize: textSize),
+    );
+  }
+
+  Future<void> setHighContrastEnabled(bool enabled) {
+    return _update((current) => current.copyWith(highContrastEnabled: enabled));
+  }
+
+  Future<void> setReduceMotion(bool enabled) {
+    return _update((current) => current.copyWith(reduceMotion: enabled));
+  }
+
   Future<void> setOnboardingComplete(bool complete) {
     return _update((current) => current.copyWith(onboardingComplete: complete));
   }
