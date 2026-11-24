@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../auth/presentation/auth_screen.dart';
+import '../../legal/presentation/legal_information_screen.dart';
 import 'accessibility_settings_screen.dart';
 import 'app_settings_screen.dart';
 
@@ -44,6 +45,16 @@ class SettingsScreen extends StatelessWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () =>
                   _openPage(context, const AccessibilitySettingsScreen()),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.policy_outlined),
+              title: const Text('Gizlilik ve kullanım koşulları'),
+              subtitle: const Text('Veri kullanımı ve uygulama kuralları'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _openPage(context, const LegalInformationScreen()),
             ),
           ),
         ],

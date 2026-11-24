@@ -10,6 +10,8 @@ void main() {
         apiKey: 'public-key',
         androidAppId: 'android-app',
         macOSAppId: 'macos-app',
+        webAppId: 'web-app',
+        webAppCheckSiteKey: 'captcha-site-key',
         messagingSenderId: 'sender',
         projectId: 'project',
         storageBucket: 'project.appspot.com',
@@ -23,6 +25,12 @@ void main() {
         config.toFirebaseOptions(platform: TargetPlatform.macOS).appId,
         'macos-app',
       );
+      final webOptions = config.toFirebaseOptions(
+        platform: TargetPlatform.macOS,
+        isWeb: true,
+      );
+      expect(webOptions.appId, 'web-app');
+      expect(webOptions.authDomain, 'project.firebaseapp.com');
     },
   );
 
@@ -31,6 +39,8 @@ void main() {
       apiKey: '',
       androidAppId: '',
       macOSAppId: '',
+      webAppId: '',
+      webAppCheckSiteKey: '',
       messagingSenderId: '',
       projectId: '',
       storageBucket: '',
@@ -38,6 +48,44 @@ void main() {
 
     expect(
       () => config.toFirebaseOptions(platform: TargetPlatform.android),
+      throwsA(isA<FirebaseConfigurationException>()),
+    );
+  });
+
+  test('requires a separate web app id when building for web', () {
+    const config = FirebaseRuntimeConfig(
+      apiKey: 'public-key',
+      androidAppId: 'android-app',
+      macOSAppId: 'macos-app',
+      webAppId: '',
+      webAppCheckSiteKey: 'captcha-site-key',
+      messagingSenderId: 'sender',
+      projectId: 'project',
+      storageBucket: 'project.appspot.com',
+    );
+
+    expect(
+      () =>
+          config.toFirebaseOptions(platform: TargetPlatform.macOS, isWeb: true),
+      throwsA(isA<FirebaseConfigurationException>()),
+    );
+  });
+
+  test('requires a web App Check key when building for web', () {
+    const config = FirebaseRuntimeConfig(
+      apiKey: 'public-key',
+      androidAppId: 'android-app',
+      macOSAppId: 'macos-app',
+      webAppId: 'web-app',
+      webAppCheckSiteKey: '',
+      messagingSenderId: 'sender',
+      projectId: 'project',
+      storageBucket: 'project.appspot.com',
+    );
+
+    expect(
+      () =>
+          config.toFirebaseOptions(platform: TargetPlatform.macOS, isWeb: true),
       throwsA(isA<FirebaseConfigurationException>()),
     );
   });

@@ -43,6 +43,20 @@ final class FirebaseAuthRepository implements AuthRepository {
   Future<void> signOut() => _auth.signOut();
 
   @override
+  Future<void> sendPasswordResetEmail(String email) {
+    return _auth.sendPasswordResetEmail(email: email);
+  }
+
+  @override
+  Future<void> deleteAccount() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw const AuthenticationRequiredException();
+    }
+    await user.delete();
+  }
+
+  @override
   Future<void> requestStudentEmailVerification() async {
     final user = _auth.currentUser;
     if (user == null) {

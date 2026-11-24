@@ -1,7 +1,10 @@
+import 'dart:developer';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../domain/models/listing.dart';
 import '../../domain/models/pickup_coordinates.dart';
+import '../../domain/services/turkish_text_normalizer.dart';
 
 final class ListingFirestoreMapper {
   const ListingFirestoreMapper();
@@ -12,9 +15,11 @@ final class ListingFirestoreMapper {
       'title': listing.title,
       'description': listing.description,
       'pickupArea': listing.pickupArea,
+      'pickupAreaKey': listing.pickupAreaKey,
       'category': listing.category.name,
       'condition': listing.condition.name,
       'tags': listing.tags,
+      'imagePaths': listing.imagePaths,
       'approximateLatitude': listing.approximateMapCoordinates.latitude,
       'approximateLongitude': listing.approximateMapCoordinates.longitude,
       'status': listing.status.name,
@@ -33,12 +38,24 @@ final class ListingFirestoreMapper {
     if (tagsValue is! List || tagsValue.any((tag) => tag is! String)) {
       throw const FormatException('Listing tags are invalid.');
     }
+    final imagePathsValue = document['imagePaths'] ?? const <Object?>[];
+    if (imagePathsValue is! List ||
+        imagePathsValue.any((path) => path is! String)) {
+      throw const FormatException('Listing images are invalid.');
+    }
     final createdAtValue = document['createdAt'];
     if (createdAtValue is! Timestamp) {
       throw const FormatException('Listing creation time is invalid.');
     }
     final latitude = document['approximateLatitude'];
     final longitude = document['approximateLongitude'];
+    final pickupArea = _requiredString(document, 'pickupArea');
+    final pickupAreaKey = document['pickupAreaKey'];
+    if (pickupAreaKey != null &&
+        (pickupAreaKey is! String ||
+            pickupAreaKey != normalizeTurkishText(pickupArea))) {
+      throw const FormatException('Listing pickup area key is invalid.');
+    }
     if (latitude is! num || longitude is! num) {
       throw const FormatException('Approximate map coordinates are invalid.');
     }
@@ -48,7 +65,7 @@ final class ListingFirestoreMapper {
       donorId: _requiredString(document, 'donorId'),
       title: _requiredString(document, 'title'),
       description: _requiredString(document, 'description'),
-      pickupArea: _requiredString(document, 'pickupArea'),
+      pickupArea: pickupArea,
       category: _enumFromName(
         ListingCategory.values,
         document['category'],
@@ -60,12 +77,38 @@ final class ListingFirestoreMapper {
         'condition',
       ),
       tags: List<String>.from(tagsValue),
+      imagePaths: List<String>.from(imagePathsValue),
       approximateMapCoordinates: PickupCoordinates(
         latitude: latitude.toDouble(),
         longitude: longitude.toDouble(),
       ),
       status: _enumFromName(ListingStatus.values, document['status'], 'status'),
       createdAt: createdAtValue.toDate().toUtc(),
+    );
+  }
+
+  List<Listing> fromDocuments(
+    Iterable<({String id, Map<String, dynamic> data})> documents,
+  ) {
+    final listings = <Listing>[];
+    for (final document in documents) {
+      try {
+        listings.add(fromDocument(document.id, document.data));
+      } on FormatException catch (error, stackTrace) {
+        _logInvalidDocument(document.id, error, stackTrace);
+      } on ArgumentError catch (error, stackTrace) {
+        _logInvalidDocument(document.id, error, stackTrace);
+      }
+    }
+    return List.unmodifiable(listings);
+  }
+
+  void _logInvalidDocument(String id, Object error, StackTrace stackTrace) {
+    log(
+      'Skipping invalid listing document "$id".',
+      name: 'ListingFirestoreMapper',
+      error: error,
+      stackTrace: stackTrace,
     );
   }
 

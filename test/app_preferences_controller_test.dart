@@ -128,6 +128,52 @@ void main() {
     expect(preferences.onboardingComplete, isTrue);
     expect(repository.saveCount, 2);
   });
+
+  test('resets malformed stored preferences and returns defaults', () async {
+    final repository = _MemoryAppPreferencesRepository()
+      ..loadError = const FormatException('Unknown theme.');
+    final container = ProviderContainer(
+      overrides: [
+        appPreferencesRepositoryProvider.overrideWithValue(repository),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final preferences = await container.read(appPreferencesProvider.future);
+
+    expect(preferences, const AppPreferences());
+    expect(repository.resetCount, 1);
+  });
+
+  test(
+    'waits for preferences to load before applying an early setter',
+    () async {
+      final repository = _MemoryAppPreferencesRepository()
+        ..loadGate = Completer<void>();
+      final container = ProviderContainer(
+        overrides: [
+          appPreferencesRepositoryProvider.overrideWithValue(repository),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final load = container.read(appPreferencesProvider.future);
+      final update = container
+          .read(appPreferencesProvider.notifier)
+          .setThemeMode(AppThemeMode.dark);
+      await Future<void>.delayed(Duration.zero);
+      expect(repository.saveAttempts, 0);
+
+      repository.loadGate!.complete();
+      await Future.wait([load, update]);
+
+      expect(
+        container.read(appPreferencesProvider).requireValue.themeMode,
+        AppThemeMode.dark,
+      );
+      expect(repository.saveCount, 1);
+    },
+  );
 }
 
 final class _MemoryAppPreferencesRepository
@@ -135,11 +181,20 @@ final class _MemoryAppPreferencesRepository
   AppPreferences value = const AppPreferences();
   bool failWrites = false;
   Completer<void>? writeGate;
+  Completer<void>? loadGate;
+  FormatException? loadError;
   int saveAttempts = 0;
   int saveCount = 0;
+  int resetCount = 0;
 
   @override
-  Future<AppPreferences> load() async => value;
+  Future<AppPreferences> load() async {
+    await loadGate?.future;
+    if (loadError case final error?) {
+      throw error;
+    }
+    return value;
+  }
 
   @override
   Future<void> save(AppPreferences preferences) async {
@@ -150,5 +205,12 @@ final class _MemoryAppPreferencesRepository
     await writeGate?.future;
     value = preferences;
     saveCount++;
+  }
+
+  @override
+  Future<void> reset() async {
+    resetCount++;
+    loadError = null;
+    value = const AppPreferences();
   }
 }

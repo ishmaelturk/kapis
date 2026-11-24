@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../application/app_preferences_controller.dart';
+import '../../../application/user_error_message.dart';
 import '../../../domain/models/app_preferences.dart';
 
 class AccessibilitySettingsScreen extends ConsumerStatefulWidget {
@@ -49,11 +50,11 @@ class _AccessibilitySettingsScreenState
       await save();
     } on PlatformException catch (error) {
       if (mounted) {
-        setState(() => _errorMessage = error.message ?? error.code);
+        setState(() => _errorMessage = userMessageFor(error));
       }
     } on StateError catch (error) {
       if (mounted) {
-        setState(() => _errorMessage = error.message);
+        setState(() => _errorMessage = userMessageFor(error));
       }
     } finally {
       if (mounted) {
@@ -75,7 +76,7 @@ class _AccessibilitySettingsScreenState
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Ayarlar yüklenemedi: $error'),
+                Text(userMessageFor(error)),
                 TextButton(
                   onPressed: () => ref.invalidate(appPreferencesProvider),
                   child: const Text('Tekrar dene'),

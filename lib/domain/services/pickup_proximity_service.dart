@@ -23,6 +23,10 @@ final class PickupGeofenceResult {
 }
 
 abstract interface class PickupProximityService {
+  Future<PickupCoordinates?> getCurrentCoordinates({
+    bool requestPermission = true,
+  });
+
   Future<PickupGeofenceResult> verifyAtPickup(PickupCoordinates target);
 }
 

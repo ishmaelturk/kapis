@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_ai/firebase_ai.dart';
+import 'package:http/http.dart' as http;
 
 import '../../domain/models/listing.dart';
 import '../../domain/models/listing_match.dart';
+import '../../domain/services/turkish_text_normalizer.dart';
 import '../../domain/repositories/listing_matchmaker.dart';
 import '../../firebase/firebase_runtime_config.dart';
 
@@ -72,6 +75,18 @@ final class FirebaseListingMatchmaker implements ListingMatchmaker {
         MatchFallbackReason.serviceUnavailable,
       );
     } on FirebaseException {
+      return _fallbackSuggestion(
+        title,
+        notes,
+        MatchFallbackReason.serviceUnavailable,
+      );
+    } on SocketException {
+      return _fallbackSuggestion(
+        title,
+        notes,
+        MatchFallbackReason.serviceUnavailable,
+      );
+    } on http.ClientException {
       return _fallbackSuggestion(
         title,
         notes,
@@ -149,6 +164,18 @@ final class FirebaseListingMatchmaker implements ListingMatchmaker {
         MatchFallbackReason.serviceUnavailable,
       );
     } on FirebaseException {
+      return _fallbackMatches(
+        query,
+        boundedCandidates,
+        MatchFallbackReason.serviceUnavailable,
+      );
+    } on SocketException {
+      return _fallbackMatches(
+        query,
+        boundedCandidates,
+        MatchFallbackReason.serviceUnavailable,
+      );
+    } on http.ClientException {
       return _fallbackMatches(
         query,
         boundedCandidates,
@@ -309,14 +336,7 @@ final class FirebaseListingMatchmaker implements ListingMatchmaker {
   }
 
   Set<String> _tokens(String value) {
-    final normalized = value
-        .toLowerCase()
-        .replaceAll('ı', 'i')
-        .replaceAll('ğ', 'g')
-        .replaceAll('ü', 'u')
-        .replaceAll('ş', 's')
-        .replaceAll('ö', 'o')
-        .replaceAll('ç', 'c')
+    final normalized = normalizeTurkishText(value)
         .replaceAll(RegExp(r'[^a-z0-9]+'), ' ');
     return normalized.split(' ').where((word) => word.length > 1).toSet();
   }

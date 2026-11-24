@@ -6,6 +6,43 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function nonBlank(value) {
+      return value is string && value.matches('.*\\S.*');
+    }
+
+    function validTagAt(data, index) {
+      return data.tags.size() <= index ||
+        (data.tags[index] is string &&
+          nonBlank(data.tags[index]) &&
+          data.tags[index].size() <= 32);
+    }
+
+    function validTags(data) {
+      return data.tags is list &&
+        data.tags.size() <= 10 &&
+        validTagAt(data, 0) &&
+        validTagAt(data, 1) &&
+        validTagAt(data, 2) &&
+        validTagAt(data, 3) &&
+        validTagAt(data, 4) &&
+        validTagAt(data, 5) &&
+        validTagAt(data, 6) &&
+        validTagAt(data, 7) &&
+        validTagAt(data, 8) &&
+        validTagAt(data, 9);
+    }
+
+    function validImagePaths(data) {
+      return !data.keys().hasAny(['imagePaths']) ||
+        (data.imagePaths is list &&
+          data.imagePaths.size() <= 1 &&
+          (data.imagePaths.size() == 0 ||
+            (data.imagePaths[0] is string &&
+              data.imagePaths[0].matches(
+                '^listing-images/[A-Za-z0-9_-]{1,128}/[A-Za-z0-9_-]{1,128}$'
+              ))));
+    }
+
     function listingPath(listingId) {
       return /databases/$(database)/documents/listings/$(listingId);
     }
@@ -18,6 +55,67 @@ service cloud.firestore {
       return /databases/$(database)/documents/listings/$(listingId)/private/handover;
     }
 
+    function reservationSlotPath(userId, slotId) {
+      return /databases/$(database)/documents/users/$(userId)/private/reservationSlots/slots/$(slotId);
+    }
+
+    function reservationIsExpired(listingId) {
+      let reservation = get(reservationPath(listingId)).data;
+      return exists(reservationPath(listingId)) &&
+        ((!reservation.keys().hasAny(['expiresAt']) &&
+            reservation.createdAt is timestamp &&
+            reservation.createdAt + duration.value(48, 'h') <= request.time) ||
+          (reservation.keys().hasAny(['expiresAt']) &&
+            reservation.expiresAt is timestamp &&
+            reservation.expiresAt <= request.time));
+    }
+
+    function reservationIsActive(listingId) {
+      let reservation = get(reservationPath(listingId)).data;
+      return exists(reservationPath(listingId)) &&
+        reservation.keys().hasAny(['expiresAt']) &&
+        reservation.expiresAt is timestamp &&
+        reservation.expiresAt > request.time;
+    }
+
+    function reservationIsUnconfirmed(reservation) {
+      return !reservation.keys().hasAny(['handoverToken', 'confirmedAt']);
+    }
+
+    function canReadReservation(listingId) {
+      return canReadPickupPoint(listingId) ||
+        (signedIn() &&
+          reservationIsExpired(listingId) &&
+          reservationIsUnconfirmed(resource.data));
+    }
+
+    function reservationSlotRemovedAfter(listingId, reservation) {
+      return !reservation.keys().hasAny(['slotId']) ||
+        !existsAfter(
+          reservationSlotPath(reservation.receiverId, reservation.slotId)
+        );
+    }
+
+    function validReservationSlotAfter(listingId, reservation) {
+      return reservation.slotId in ['slot-1', 'slot-2', 'slot-3'] &&
+        existsAfter(
+          reservationSlotPath(reservation.receiverId, reservation.slotId)
+        ) &&
+        getAfter(
+          reservationSlotPath(reservation.receiverId, reservation.slotId)
+        ).data.listingId == listingId;
+    }
+
+    function validReservationSlotBefore(listingId, reservation) {
+      return reservation.slotId in ['slot-1', 'slot-2', 'slot-3'] &&
+        exists(
+          reservationSlotPath(reservation.receiverId, reservation.slotId)
+        ) &&
+        get(
+          reservationSlotPath(reservation.receiverId, reservation.slotId)
+        ).data.listingId == listingId;
+    }
+
     function isOwner(listingId) {
       return signedIn() &&
         get(listingPath(listingId)).data.donorId == request.auth.uid;
@@ -27,7 +125,7 @@ service cloud.firestore {
       return signedIn() &&
         (isOwner(listingId) ||
           (get(listingPath(listingId)).data.status == 'reserved' &&
-            exists(reservationPath(listingId)) &&
+            reservationIsActive(listingId) &&
             get(reservationPath(listingId)).data.receiverId == request.auth.uid));
     }
 
@@ -50,20 +148,26 @@ service cloud.firestore {
           'title',
           'description',
           'pickupArea',
+          'pickupAreaKey',
           'category',
           'condition',
           'tags',
+          'imagePaths',
           'approximateLatitude',
           'approximateLongitude',
           'status',
           'createdAt'
         ]) &&
         data.donorId is string &&
-        data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
-        data.description is string &&
-        data.description.size() > 0 && data.description.size() <= 1000 &&
-        data.pickupArea is string &&
-        data.pickupArea.size() > 0 && data.pickupArea.size() <= 100 &&
+        nonBlank(data.title) &&
+        data.title.size() <= 100 &&
+        nonBlank(data.description) &&
+        data.description.size() <= 1000 &&
+        nonBlank(data.pickupArea) &&
+        data.pickupArea.size() <= 100 &&
+        (!data.keys().hasAny(['pickupAreaKey']) ||
+          (nonBlank(data.pickupAreaKey) &&
+            data.pickupAreaKey.size() <= 100)) &&
         data.category in [
           'furniture',
           'seating',
@@ -73,7 +177,8 @@ service cloud.firestore {
           'other'
         ] &&
         data.condition in ['likeNew', 'good', 'fair'] &&
-        data.tags is list && data.tags.size() <= 10 &&
+        validTags(data) &&
+        validImagePaths(data) &&
         data.approximateLatitude is number &&
         data.approximateLatitude >= -90 &&
         data.approximateLatitude <= 90 &&
@@ -90,7 +195,67 @@ service cloud.firestore {
         request.resource.data.status == 'reserved' &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
         existsAfter(reservationPath(listingId)) &&
-        getAfter(reservationPath(listingId)).data.receiverId == request.auth.uid;
+        getAfter(reservationPath(listingId)).data.receiverId == request.auth.uid &&
+        getAfter(reservationPath(listingId)).data.receiverId != resource.data.donorId &&
+        getAfter(reservationPath(listingId)).data.createdAt == request.time &&
+        getAfter(reservationPath(listingId)).data.expiresAt is timestamp &&
+        getAfter(reservationPath(listingId)).data.expiresAt > request.time &&
+        getAfter(reservationPath(listingId)).data.expiresAt <=
+          request.time + duration.value(48, 'h') &&
+        validReservationSlotAfter(
+          listingId,
+          getAfter(reservationPath(listingId)).data
+        );
+    }
+
+    function validReservationCancel(listingId) {
+      return signedIn() &&
+        resource.data.status == 'reserved' &&
+        request.resource.data.status == 'available' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        exists(reservationPath(listingId)) &&
+        get(reservationPath(listingId)).data.receiverId == request.auth.uid &&
+        reservationIsUnconfirmed(get(reservationPath(listingId)).data) &&
+        !existsAfter(reservationPath(listingId)) &&
+        reservationSlotRemovedAfter(
+          listingId,
+          get(reservationPath(listingId)).data
+        );
+    }
+
+    function validExpiredReservationRelease(listingId) {
+      return signedIn() &&
+        resource.data.status == 'reserved' &&
+        request.resource.data.status == 'available' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        reservationIsExpired(listingId) &&
+        reservationIsUnconfirmed(get(reservationPath(listingId)).data) &&
+        !existsAfter(reservationPath(listingId)) &&
+        reservationSlotRemovedAfter(
+          listingId,
+          get(reservationPath(listingId)).data
+        );
+    }
+
+    function validDonorRelease(listingId) {
+      let reservation = get(reservationPath(listingId)).data;
+      return exists(reservationPath(listingId)) &&
+        resource.data.status == 'reserved' &&
+        request.resource.data.status in ['available', 'withdrawn'] &&
+        reservationIsUnconfirmed(reservation) &&
+        !existsAfter(reservationPath(listingId)) &&
+        reservationSlotRemovedAfter(listingId, reservation);
+    }
+
+    function validReservationDelete(listingId) {
+      return signedIn() &&
+        reservationIsUnconfirmed(resource.data) &&
+        getAfter(listingPath(listingId)).data.status in ['available', 'withdrawn'] &&
+        !existsAfter(reservationPath(listingId)) &&
+        reservationSlotRemovedAfter(listingId, resource.data) &&
+        (resource.data.receiverId == request.auth.uid ||
+          isOwner(listingId) ||
+          reservationIsExpired(listingId));
     }
 
     function validHandover(listingId) {
@@ -98,24 +263,37 @@ service cloud.firestore {
         resource.data.status == 'reserved' &&
         request.resource.data.status == 'handedOver' &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        reservationIsActive(listingId) &&
         existsAfter(reservationPath(listingId)) &&
         getAfter(reservationPath(listingId)).data.receiverId == request.auth.uid &&
+        validReservationSlotBefore(
+          listingId,
+          getAfter(reservationPath(listingId)).data
+        ) &&
+        reservationSlotRemovedAfter(
+          listingId,
+          getAfter(reservationPath(listingId)).data
+        ) &&
         getAfter(reservationPath(listingId)).data.handoverToken ==
           get(handoverCodePath(listingId)).data.token &&
         getAfter(reservationPath(listingId)).data.confirmedAt == request.time;
     }
 
     match /listings/{listingId} {
-      allow get, list: if true;
+      allow get, list: if signedIn();
 
       allow create: if signedIn() &&
         validListing(request.resource.data) &&
+        request.resource.data.pickupAreaKey is string &&
+        nonBlank(request.resource.data.pickupAreaKey) &&
         request.resource.data.donorId == request.auth.uid &&
         request.resource.data.status == 'available' &&
         request.resource.data.createdAt == request.time;
 
       allow update: if validReservation(listingId) ||
         validHandover(listingId) ||
+        validReservationCancel(listingId) ||
+        validExpiredReservationRelease(listingId) ||
         (signedIn() &&
           resource.data.donorId == request.auth.uid &&
           request.resource.data.donorId == resource.data.donorId &&
@@ -124,15 +302,20 @@ service cloud.firestore {
             'title',
             'description',
             'pickupArea',
+            'pickupAreaKey',
             'category',
             'condition',
             'tags',
+            'imagePaths',
             'approximateLatitude',
             'approximateLongitude',
             'status'
           ]) &&
-          resource.data.status == 'available' &&
-          request.resource.data.status in ['available', 'withdrawn']);
+          ((resource.data.status == 'available' &&
+              request.resource.data.status in ['available', 'withdrawn']) ||
+            (resource.data.status == 'reserved' &&
+              request.resource.data.status in ['available', 'withdrawn'] &&
+              validDonorRelease(listingId))));
 
       allow delete: if false;
 
@@ -153,19 +336,37 @@ service cloud.firestore {
       }
 
       match /private/reservation {
-        allow read: if canReadPickupPoint(listingId);
+        allow read: if canReadReservation(listingId);
 
         allow create: if signedIn() &&
-          request.resource.data.keys().hasOnly(['receiverId', 'createdAt']) &&
+          request.resource.data.keys().hasAll([
+            'receiverId',
+            'createdAt',
+            'expiresAt',
+            'slotId'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'receiverId',
+            'createdAt',
+            'expiresAt',
+            'slotId'
+          ]) &&
           request.resource.data.receiverId == request.auth.uid &&
           request.resource.data.createdAt == request.time &&
+          request.resource.data.expiresAt is timestamp &&
+          request.resource.data.expiresAt > request.time &&
+          request.resource.data.expiresAt <=
+            request.time + duration.value(48, 'h') &&
+          request.resource.data.slotId in ['slot-1', 'slot-2', 'slot-3'] &&
           request.resource.data.receiverId !=
             get(listingPath(listingId)).data.donorId &&
-          getAfter(listingPath(listingId)).data.status == 'reserved';
+          getAfter(listingPath(listingId)).data.status == 'reserved' &&
+          validReservationSlotAfter(listingId, request.resource.data);
 
         allow update: if signedIn() &&
           resource.data.receiverId == request.auth.uid &&
-          !resource.data.keys().hasAny(['handoverToken', 'confirmedAt']) &&
+          reservationIsActive(listingId) &&
+          reservationIsUnconfirmed(resource.data) &&
           request.resource.data.receiverId == resource.data.receiverId &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'handoverToken',
@@ -175,7 +376,7 @@ service cloud.firestore {
             get(handoverCodePath(listingId)).data.token &&
           request.resource.data.confirmedAt == request.time;
 
-        allow delete: if false;
+        allow delete: if validReservationDelete(listingId);
       }
 
       match /private/handover {
@@ -183,6 +384,7 @@ service cloud.firestore {
 
         allow create, update: if isOwner(listingId) &&
           get(listingPath(listingId)).data.status == 'reserved' &&
+          reservationIsActive(listingId) &&
           request.resource.data.keys().hasOnly(['token', 'createdAt']) &&
           request.resource.data.token is string &&
           request.resource.data.token.size() == 43 &&
@@ -190,6 +392,81 @@ service cloud.firestore {
 
         allow delete: if false;
       }
+    }
+
+    match /users/{userId}/private/reservationSlots/slots/{slotId} {
+      allow get, list: if signedIn() && request.auth.uid == userId;
+
+      allow create: if signedIn() &&
+        request.auth.uid == userId &&
+        slotId in ['slot-1', 'slot-2', 'slot-3'] &&
+        request.resource.data.keys().hasOnly(['listingId']) &&
+        request.resource.data.listingId is string &&
+        existsAfter(listingPath(request.resource.data.listingId)) &&
+        getAfter(listingPath(request.resource.data.listingId)).data.status ==
+          'reserved' &&
+        existsAfter(reservationPath(request.resource.data.listingId)) &&
+        getAfter(reservationPath(request.resource.data.listingId)).data.receiverId ==
+          userId &&
+        getAfter(reservationPath(request.resource.data.listingId)).data.slotId ==
+          slotId;
+
+      allow update: if false;
+
+      allow delete: if signedIn() &&
+        resource.data.listingId is string &&
+        exists(reservationPath(resource.data.listingId)) &&
+        get(reservationPath(resource.data.listingId)).data.receiverId ==
+          userId &&
+        get(reservationPath(resource.data.listingId)).data.slotId == slotId &&
+        ((getAfter(listingPath(resource.data.listingId)).data.status in [
+              'available',
+              'withdrawn'
+            ] &&
+            !existsAfter(reservationPath(resource.data.listingId)) &&
+            (request.auth.uid == userId ||
+              isOwner(resource.data.listingId) ||
+              reservationIsExpired(resource.data.listingId))) ||
+          (getAfter(listingPath(resource.data.listingId)).data.status ==
+              'handedOver' &&
+            request.auth.uid == userId &&
+            existsAfter(reservationPath(resource.data.listingId)) &&
+            getAfter(reservationPath(resource.data.listingId)).data.receiverId ==
+              userId &&
+            getAfter(reservationPath(resource.data.listingId)).data.slotId ==
+              slotId &&
+            getAfter(reservationPath(resource.data.listingId)).data.confirmedAt ==
+              request.time &&
+            getAfter(reservationPath(resource.data.listingId)).data.handoverToken ==
+              get(handoverCodePath(resource.data.listingId)).data.token));
+    }
+
+    match /reports/{reportId} {
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasAll([
+              'listingId',
+              'reporterId',
+              'reason',
+              'createdAt'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+              'listingId',
+              'reporterId',
+              'reason',
+              'createdAt'
+        ]) &&
+        request.resource.data.listingId is string &&
+        exists(listingPath(request.resource.data.listingId)) &&
+        request.resource.data.reporterId == request.auth.uid &&
+        request.resource.data.reason in [
+              'spam',
+              'inappropriate',
+              'unsafe',
+              'other'
+        ] &&
+        request.resource.data.createdAt == request.time;
+
+      allow read, update, delete: if false;
     }
   }
 }

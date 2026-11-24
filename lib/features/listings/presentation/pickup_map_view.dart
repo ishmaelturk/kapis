@@ -5,11 +5,18 @@ import 'package:material_ui/material_ui.dart';
 import '../../../domain/models/listing.dart';
 import '../../../domain/models/pickup_coordinates.dart';
 
+const _mapTileUrlTemplate = String.fromEnvironment(
+  'KAPIS_MAP_TILE_URL',
+  defaultValue: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+);
+
 class PickupMapView extends StatelessWidget {
   const PickupMapView({
     required this.center,
     this.selectedPickup,
     this.listings = const [],
+    this.initialZoom = 12,
+    this.fitListings = false,
     this.onMapTap,
     this.onListingSelected,
     super.key,
@@ -18,11 +25,32 @@ class PickupMapView extends StatelessWidget {
   final PickupCoordinates center;
   final PickupCoordinates? selectedPickup;
   final List<Listing> listings;
+  final double initialZoom;
+  final bool fitListings;
   final ValueChanged<PickupCoordinates>? onMapTap;
   final ValueChanged<Listing>? onListingSelected;
 
   @override
   Widget build(BuildContext context) {
+    final listingPoints = [
+      for (final listing in listings)
+        LatLng(
+          listing.approximateMapCoordinates.latitude,
+          listing.approximateMapCoordinates.longitude,
+        ),
+    ];
+    final hasDistinctPoints =
+        listingPoints.length > 1 &&
+        listingPoints
+            .skip(1)
+            .any(
+              (point) =>
+                  point.latitude != listingPoints.first.latitude ||
+                  point.longitude != listingPoints.first.longitude,
+            );
+    final bounds = fitListings && hasDistinctPoints
+        ? LatLngBounds.fromPoints(listingPoints)
+        : null;
     final markers = <Marker>[
       if (selectedPickup case final point?)
         Marker(
@@ -53,7 +81,13 @@ class PickupMapView extends StatelessWidget {
     return FlutterMap(
       options: MapOptions(
         initialCenter: LatLng(center.latitude, center.longitude),
-        initialZoom: 12,
+        initialZoom: initialZoom,
+        initialCameraFit: bounds == null
+            ? null
+            : CameraFit.bounds(
+                bounds: bounds,
+                padding: const EdgeInsets.all(24),
+              ),
         onTap: onMapTap == null
             ? null
             : (_, point) => onMapTap!(
@@ -65,7 +99,7 @@ class PickupMapView extends StatelessWidget {
       ),
       children: [
         TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          urlTemplate: _mapTileUrlTemplate,
           userAgentPackageName: 'com.kapis.app.kapis',
         ),
         if (markers.isNotEmpty) MarkerLayer(markers: markers),

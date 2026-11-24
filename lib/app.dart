@@ -25,6 +25,8 @@ class KapisApp extends ConsumerWidget {
     final contrastLevel = preferences.highContrastEnabled ? 1.0 : 0.0;
     return MaterialApp(
       title: 'Kapış',
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      supportedLocales: const [Locale('tr')],
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF2E7D32),

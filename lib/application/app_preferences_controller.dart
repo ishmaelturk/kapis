@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,8 +23,20 @@ final class AppPreferencesController extends AsyncNotifier<AppPreferences> {
   Future<void> _writeQueue = Future<void>.value();
 
   @override
-  Future<AppPreferences> build() {
-    return ref.watch(appPreferencesRepositoryProvider).load();
+  Future<AppPreferences> build() async {
+    final repository = ref.watch(appPreferencesRepositoryProvider);
+    try {
+      return await repository.load();
+    } on FormatException catch (error, stackTrace) {
+      log(
+        'Resetting malformed app preferences.',
+        name: 'AppPreferencesController',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      await repository.reset();
+      return const AppPreferences();
+    }
   }
 
   Future<void> setRoleMode(UserRoleMode roleMode) {
@@ -71,7 +85,7 @@ final class AppPreferencesController extends AsyncNotifier<AppPreferences> {
     AppPreferences Function(AppPreferences current) update,
   ) async {
     final operation = _writeQueue.then((_) async {
-      final current = state.requireValue;
+      final current = await future;
       final updated = update(current);
       await ref.read(appPreferencesRepositoryProvider).save(updated);
       state = AsyncData(updated);

@@ -4,15 +4,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../application/listing_providers.dart';
+import '../../../application/user_error_message.dart';
 import '../../../domain/models/listing.dart';
 import '../../../domain/models/listing_match.dart';
 import '../../../domain/models/pickup_coordinates.dart';
 import '../../../domain/repositories/auth_repository.dart';
+import '../../../domain/repositories/listing_report_repository.dart';
 import '../../../firebase/firebase_providers.dart';
 import '../../../firebase/firebase_runtime_config.dart';
+import '../../auth/presentation/auth_screen.dart';
 import '../handover/handover_screen.dart';
 import 'listing_form_screen.dart';
 import 'my_listings_screen.dart';
+import 'my_reservations_screen.dart';
+import 'listing_photo_view.dart';
 import 'pickup_map_view.dart';
 import '../../settings/presentation/settings_screen.dart';
 
@@ -37,6 +42,13 @@ class _ListingDiscoveryScreenState
   String? _actionError;
   ListingMatchResult? _matchResult;
   bool _isRanking = false;
+  final List<Listing> _additionalListings = [];
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  String? _paginationError;
+  final Set<String> _hiddenListingIds = {};
+
+  static const _pageSize = 30;
 
   @override
   void dispose() {
@@ -59,7 +71,10 @@ class _ListingDiscoveryScreenState
     try {
       final result = await ref
           .read(listingMatchmakerProvider)
-          .rankListings(receiverNeeds: needs, candidates: items);
+          .rankListings(
+            receiverNeeds: needs,
+            candidates: items.take(15).toList(growable: false),
+          );
       if (mounted) {
         if (_needsController.text.trim() == needs &&
             _areaFilter == areaFilter) {
@@ -67,17 +82,15 @@ class _ListingDiscoveryScreenState
         }
       }
     } on ArgumentError catch (error) {
-      _setActionError(
-        error.message?.toString() ?? 'İhtiyaç notunu kontrol et.',
-      );
+      _setActionError(userMessageFor(error));
     } on FirebaseConfigurationException catch (error) {
-      _setActionError(error.toString());
+      _setActionError(userMessageFor(error));
     } on FirebaseAIException catch (error) {
-      _setActionError(error.message);
+      _setActionError(userMessageFor(error));
     } on FirebaseAISdkException catch (error) {
-      _setActionError(error.message);
+      _setActionError(userMessageFor(error));
     } on FirebaseException catch (error) {
-      _setActionError(error.message ?? error.code);
+      _setActionError(userMessageFor(error));
     } finally {
       if (mounted) {
         setState(() => _isRanking = false);
@@ -88,6 +101,44 @@ class _ListingDiscoveryScreenState
   Future<void> _reserve(Listing listing) async {
     setState(() => _actionError = null);
     try {
+      final authState = ref.read(authStateProvider);
+      final user = authState.value ?? await ref.read(authStateProvider.future);
+      if (!mounted) {
+        return;
+      }
+      if (user == null) {
+        await Navigator.of(context)
+            .push(MaterialPageRoute<void>(builder: (_) => const AuthScreen()));
+        return;
+      }
+      if (listing.donorId == user.id) {
+        return;
+      }
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Bağışı ayırt?'),
+          content: const Text(
+            'Ayırttığında bağışçının kesin teslim noktası seninle paylaşılır. '
+            'Ayırtma 48 saat geçerlidir; bu süre içinde teslim alabilir veya '
+            'ayırtmayı iptal edebilirsin.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Ayırt ve devam et'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) {
+        return;
+      }
+
       final repository = await ref.read(handoverRepositoryProvider.future);
       await repository.reserveListing(listing.id);
       if (!mounted) {
@@ -100,13 +151,77 @@ class _ListingDiscoveryScreenState
         ),
       );
     } on FirebaseConfigurationException catch (error) {
-      _setActionError(error.toString());
-    } on AuthenticationRequiredException catch (error) {
-      _setActionError('$error Giriş yapıp tekrar dene.');
+      _setActionError(userMessageFor(error));
+    } on AuthenticationRequiredException {
+      if (mounted) {
+        await Navigator.of(context)
+            .push(MaterialPageRoute<void>(builder: (_) => const AuthScreen()));
+      }
     } on FirebaseException catch (error) {
-      _setActionError(error.message ?? error.code);
+      _setActionError(userMessageFor(error));
     } on StateError catch (error) {
-      _setActionError(error.message);
+      _setActionError(userMessageFor(error));
+    }
+  }
+
+  Future<void> _reportListing(Listing listing) async {
+    final authState = ref.read(authStateProvider);
+    final user = authState.value ?? await ref.read(authStateProvider.future);
+    if (!mounted) {
+      return;
+    }
+    if (user == null) {
+      await Navigator.of(context)
+          .push(MaterialPageRoute<void>(builder: (_) => const AuthScreen()));
+      return;
+    }
+
+    final reason = await showDialog<ListingReportReason>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('İlanı bildir'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final option in ListingReportReason.values)
+              ListTile(
+                title: Text(option.label),
+                onTap: () => Navigator.pop(context, option),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Vazgeç'),
+          ),
+        ],
+      ),
+    );
+    if (reason == null || !mounted) {
+      return;
+    }
+
+    try {
+      final repository = await ref.read(listingReportRepositoryProvider.future);
+      await repository.reportListing(listingId: listing.id, reason: reason);
+      if (mounted) {
+        setState(() {
+          _hiddenListingIds.add(listing.id);
+          _actionError = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Bildirim alındı; bu ilan sana gösterilmeyecek.'),
+          ),
+        );
+      }
+    } on FirebaseConfigurationException catch (error) {
+      _setActionError(userMessageFor(error));
+    } on AuthenticationRequiredException catch (error) {
+      _setActionError(userMessageFor(error));
+    } on FirebaseException catch (error) {
+      _setActionError(userMessageFor(error));
     }
   }
 
@@ -124,66 +239,95 @@ class _ListingDiscoveryScreenState
     );
   }
 
+  Future<void> _loadMore(List<Listing> listings) async {
+    if (_isLoadingMore || !_hasMore || listings.isEmpty) {
+      return;
+    }
+    setState(() {
+      _isLoadingMore = true;
+      _paginationError = null;
+    });
+    try {
+      final repository = await ref.read(listingRepositoryProvider.future);
+      final page = await repository.fetchAvailablePage(
+        pickupArea: _areaFilter,
+        startAfterId: listings.last.id,
+        limit: _pageSize,
+      );
+      if (mounted) {
+        final knownIds = {
+          ...listings.map((listing) => listing.id),
+          ..._additionalListings.map((listing) => listing.id),
+        };
+        setState(() {
+          _additionalListings.addAll(
+            page.where((listing) => !knownIds.contains(listing.id)),
+          );
+          _hasMore = page.length == _pageSize;
+        });
+      }
+    } on FirebaseConfigurationException catch (error) {
+      if (mounted) {
+        setState(() => _paginationError = userMessageFor(error));
+      }
+    } on FirebaseException catch (error) {
+      if (mounted) {
+        setState(() => _paginationError = userMessageFor(error));
+      }
+    } on StateError catch (error) {
+      if (mounted) {
+        setState(() => _paginationError = userMessageFor(error));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final listings = ref.watch(availableListingsProvider(_areaFilter));
+    final authState = ref.watch(authStateProvider);
+    final userId = authState.value?.id;
+    final drawer = _buildDrawer(context);
+
+    if (authState.hasError || !authState.hasValue || userId == null) {
+      final message = authState.hasError
+          ? userMessageFor(authState.error!)
+          : !authState.hasValue
+          ? null
+          : 'Bağışları keşfetmek için hesabına giriş yap.';
+      return Scaffold(
+        appBar: AppBar(title: const Text('Yakınındaki bağışlar')),
+        drawer: drawer,
+        body: Center(
+          child: authState.hasError || !authState.hasValue
+              ? message == null
+                    ? const CircularProgressIndicator()
+                    : Text(message)
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(message!),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const AuthScreen(),
+                        ),
+                      ),
+                      child: const Text('Giriş yap'),
+                    ),
+                  ],
+                ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Yakınındaki bağışlar')),
-      drawer: Drawer(
-        child: SafeArea(
-          child: Column(
-            children: [
-              DrawerHeader(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                ),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Icon(
-                        Icons.volunteer_activism_outlined,
-                        color: Theme.of(context).colorScheme.primary,
-                        size: 36,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Kapış',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const Text('Ücretsiz eşya paylaşımı'),
-                    ],
-                  ),
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.search),
-                title: const Text('Bağışları keşfet'),
-                onTap: () => Navigator.of(context).pop(),
-              ),
-              ListTile(
-                leading: const Icon(Icons.add_circle_outline),
-                title: const Text('Eşya bağışla'),
-                onTap: () =>
-                    _openDrawerPage(context, const ListingFormScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.inventory_2_outlined),
-                title: const Text('Bağışlarım'),
-                onTap: () => _openDrawerPage(context, const MyListingsScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.settings_outlined),
-                title: const Text('Ayarlar'),
-                onTap: () => _openDrawerPage(context, const SettingsScreen()),
-              ),
-            ],
-          ),
-        ),
-      ),
+      drawer: drawer,
       body: Column(
         children: [
           Padding(
@@ -236,11 +380,23 @@ class _ListingDiscoveryScreenState
               error: (error, _) => Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
-                  child: Text('Bağışlar yüklenemedi: $error'),
+                  child: Text(userMessageFor(error)),
                 ),
               ),
               data: (items) {
-                if (items.isEmpty) {
+                final firstPageIds = items.map((listing) => listing.id).toSet();
+                final pagedItems = [
+                  ...items,
+                  ..._additionalListings.where(
+                    (listing) =>
+                        !firstPageIds.contains(listing.id) &&
+                        listing.status == ListingStatus.available,
+                  ),
+                ];
+                final loadedItems = pagedItems
+                    .where((listing) => !_hiddenListingIds.contains(listing.id))
+                    .toList(growable: false);
+                if (loadedItems.isEmpty) {
                   return const Center(
                     child: Padding(
                       padding: EdgeInsets.all(24),
@@ -252,13 +408,25 @@ class _ListingDiscoveryScreenState
                   for (final match in _matchResult?.matches ?? <ListingMatch>[])
                     match.listingId: match,
                 };
-                final orderedItems = _matchResult == null
-                    ? items
+                final matchedItems = _matchResult == null
+                    ? <Listing>[]
                     : [
                         for (final match in _matchResult!.matches)
-                          for (final listing in items)
+                          for (final listing in loadedItems)
                             if (listing.id == match.listingId) listing,
                       ];
+                final matchedIds = matchedItems
+                    .map((listing) => listing.id)
+                    .toSet();
+                final orderedItems = _matchResult == null
+                    ? loadedItems
+                    : [
+                        ...matchedItems,
+                        ...loadedItems.where(
+                          (listing) => !matchedIds.contains(listing.id),
+                        ),
+                      ];
+                final showLoadMore = pagedItems.length >= _pageSize && _hasMore;
                 return Column(
                   children: [
                     Padding(
@@ -274,7 +442,7 @@ class _ListingDiscoveryScreenState
                           OutlinedButton.icon(
                             onPressed: _isRanking
                                 ? null
-                                : () => _rankListings(items),
+                                : () => _rankListings(loadedItems),
                             icon: const Icon(Icons.auto_awesome_outlined),
                             label: Text(
                               _isRanking
@@ -300,47 +468,94 @@ class _ListingDiscoveryScreenState
                     ),
                     Expanded(
                       child: ListView.builder(
-                        itemCount: orderedItems.length,
+                        itemCount: orderedItems.length + (showLoadMore ? 1 : 0),
                         itemBuilder: (context, index) {
-                          final listing = orderedItems[index];
-                          final match = scores[listing.id];
-                          return Card(
-                            margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                            child: Padding(
+                          if (index == orderedItems.length) {
+                            return Padding(
                               padding: const EdgeInsets.all(16),
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    listing.title,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(listing.description),
-                                  if (match != null) ...[
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      '${match.score}/100 · ${match.reason}',
-                                    ),
-                                  ],
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    '${listing.category.label} · '
-                                    '${listing.condition.label} · '
-                                    '${listing.pickupArea}',
-                                  ),
-                                  const SizedBox(height: 12),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: FilledButton(
-                                      onPressed: () => _reserve(listing),
-                                      child: const Text('Ayırt ve teslim al'),
+                                  if (_paginationError case final error?)
+                                    Text(error),
+                                  FilledButton(
+                                    onPressed: _isLoadingMore
+                                        ? null
+                                        : () => _loadMore(pagedItems),
+                                    child: Text(
+                                      _isLoadingMore
+                                          ? 'İlanlar yükleniyor...'
+                                          : _paginationError == null
+                                          ? 'Daha fazla ilan yükle'
+                                          : 'Tekrar dene',
                                     ),
                                   ),
                                 ],
                               ),
+                            );
+                          }
+                          final listing = orderedItems[index];
+                          final match = scores[listing.id];
+                          return Card(
+                            margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ListingPhotoView(listing: listing),
+                                Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        listing.title,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleLarge,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(listing.description),
+                                      if (match != null) ...[
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          '${match.score}/100 · ${match.reason}',
+                                        ),
+                                      ],
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        '${listing.category.label} · '
+                                        '${listing.condition.label} · '
+                                        '${listing.pickupArea}',
+                                      ),
+                                      const SizedBox(height: 12),
+                                      if (listing.donorId == userId)
+                                        const Text('Bu senin ilanındır.')
+                                      else
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            FilledButton(
+                                              onPressed: () =>
+                                                  _reserve(listing),
+                                              child: const Text(
+                                                'Ayırt ve teslim al',
+                                              ),
+                                            ),
+                                            TextButton.icon(
+                                              onPressed: () =>
+                                                  _reportListing(listing),
+                                              icon: const Icon(
+                                                Icons.flag_outlined,
+                                              ),
+                                              label: const Text('İlanı bildir'),
+                                            ),
+                                          ],
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           );
                         },
@@ -356,12 +571,77 @@ class _ListingDiscoveryScreenState
     );
   }
 
+  Drawer _buildDrawer(BuildContext context) {
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Icon(
+                      Icons.volunteer_activism_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 36,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Kapış',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const Text('Ücretsiz eşya paylaşımı'),
+                  ],
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.search),
+              title: const Text('Bağışları keşfet'),
+              onTap: () => Navigator.of(context).pop(),
+            ),
+            ListTile(
+              leading: const Icon(Icons.add_circle_outline),
+              title: const Text('Eşya bağışla'),
+              onTap: () => _openDrawerPage(context, const ListingFormScreen()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: const Text('Bağışlarım'),
+              onTap: () => _openDrawerPage(context, const MyListingsScreen()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.bookmark_border),
+              title: const Text('Ayırttıklarım'),
+              onTap: () =>
+                  _openDrawerPage(context, const MyReservationsScreen()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('Ayarlar'),
+              onTap: () => _openDrawerPage(context, const SettingsScreen()),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _applyAreaFilter() {
     final area = _areaController.text.trim();
     setState(() {
       _areaFilter = area.isEmpty ? null : area;
       _actionError = null;
       _matchResult = null;
+      _additionalListings.clear();
+      _hasMore = true;
+      _paginationError = null;
     });
   }
 }
@@ -391,6 +671,7 @@ class ListingMapScreen extends StatelessWidget {
             child: PickupMapView(
               center: center,
               listings: listings,
+              fitListings: true,
               onListingSelected: (listing) {
                 showDialog<void>(
                   context: context,

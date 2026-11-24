@@ -12,31 +12,42 @@ dependencies:
     sdk: flutter
 
   # State & Architecture
-  flutter_riverpod: ^2.6.1
+  flutter_riverpod: ^3.5.0
 
   # Firebase Backend & Hosted Free-Tier Gemini AI
-  firebase_core: ^3.8.1
-  firebase_auth: ^5.3.4
-  cloud_firestore: ^5.5.0
-  firebase_storage: ^12.3.7
-  firebase_ai: ^2.3.0
+  firebase_core: ^5.2.0
+  firebase_auth: ^7.1.0
+  firebase_app_check: ^0.5.2
+  cloud_firestore: ^7.2.0
+  firebase_storage: ^14.1.0
+  firebase_ai: ^5.2.0
 
   # Maps, 100m Geofence & QR Handover
-  flutter_map: ^7.0.2
-  latlong2: ^0.9.1
-  geolocator: ^13.0.2
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
+  geolocator: ^14.1.2
   qr_flutter: ^4.1.0
-  mobile_scanner: ^6.0.2
+  mobile_scanner: ^7.5.0
 
   # Lightweight Local Session/Prefs & Media
   shared_preferences: ^2.3.3
   image_picker: ^1.1.2
+  url_launcher: ^6.3.2
   material_ui: ^1.11.1
+  path: ^1.9.1
+  path_provider: ^2.1.6
+  sqflite_common: ^2.5.17
+  sqflite_common_ffi: ^2.4.7
+  sqflite_common_ffi_web: ^1.2.2
+  image: ^4.13.1
+  flutter_localizations:
+    sdk: flutter
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true

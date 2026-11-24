@@ -1,15 +1,24 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:kapis/data/firebase/firebase_listing_matchmaker.dart';
 import 'package:kapis/domain/models/listing.dart';
 import 'package:kapis/domain/models/listing_match.dart';
 import 'package:kapis/domain/models/pickup_coordinates.dart';
+import 'package:kapis/domain/services/turkish_text_normalizer.dart';
 
 void main() {
+  test('normalizes Turkish dotted and dotless I before token matching', () {
+    expect(normalizeTurkishText('İstanbul'), 'istanbul');
+    expect(normalizeTurkishText('IĞDIR'), 'igdir');
+    expect(normalizeTurkishText(' Kadıköy '), 'kadikoy');
+  });
+
   test(
     'listing suggestion parses bounded fields and supports an optional photo',
     () async {
@@ -71,6 +80,38 @@ void main() {
       expect(result.usedFallback, isTrue);
       expect(result.fallbackReason, MatchFallbackReason.serviceUnavailable);
       expect(result.suggestion.description, 'Çalışır durumda.');
+    },
+  );
+
+  test(
+    'socket and HTTP client errors use local suggestion and ranking',
+    () async {
+      for (final error in <Object>[
+        const SocketException('offline'),
+        http.ClientException('offline'),
+      ]) {
+        final matchmaker = FirebaseListingMatchmaker((_) async => throw error);
+        final suggestion = await matchmaker.suggestListing(
+          title: 'Masa',
+          notes: 'Çalışma masası.',
+        );
+        final ranking = await matchmaker.rankListings(
+          receiverNeeds: 'masa',
+          candidates: [
+            _listing(
+              id: 'desk',
+              title: 'Çalışma masası',
+              description: 'Ahşap masa',
+            ),
+          ],
+        );
+
+        expect(
+          suggestion.fallbackReason,
+          MatchFallbackReason.serviceUnavailable,
+        );
+        expect(ranking.fallbackReason, MatchFallbackReason.serviceUnavailable);
+      }
     },
   );
 

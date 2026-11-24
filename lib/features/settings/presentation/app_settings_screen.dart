@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../application/app_preferences_controller.dart';
+import '../../../application/user_error_message.dart';
 import '../../../domain/models/app_preferences.dart';
 
 class AppSettingsScreen extends ConsumerStatefulWidget {
@@ -25,11 +26,11 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
       await ref.read(appPreferencesProvider.notifier).setThemeMode(themeMode);
     } on PlatformException catch (error) {
       if (mounted) {
-        setState(() => _errorMessage = error.message ?? error.code);
+        setState(() => _errorMessage = userMessageFor(error));
       }
     } on StateError catch (error) {
       if (mounted) {
-        setState(() => _errorMessage = error.message);
+        setState(() => _errorMessage = userMessageFor(error));
       }
     } finally {
       if (mounted) {
@@ -46,7 +47,7 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
       body: preferences.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _SettingsLoadError(
-          message: error.toString(),
+          message: userMessageFor(error),
           onRetry: () => ref.invalidate(appPreferencesProvider),
         ),
         data: (value) => ListView(

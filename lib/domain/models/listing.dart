@@ -1,4 +1,5 @@
 import 'pickup_coordinates.dart';
+import '../services/turkish_text_normalizer.dart';
 
 enum ListingCategory {
   furniture('Mobilya'),
@@ -37,11 +38,25 @@ final class Listing {
     required List<String> tags,
     required this.approximateMapCoordinates,
     required this.createdAt,
+    List<String> imagePaths = const [],
     this.status = ListingStatus.available,
-  }) : tags = List.unmodifiable(tags) {
+  }) : tags = List.unmodifiable(tags.map((tag) => tag.trim())),
+       imagePaths = List.unmodifiable(imagePaths) {
     _requireNonBlank(id, 'id');
     _requireNonBlank(donorId, 'donorId');
     _validateListingFields(title, description, pickupArea, this.tags);
+    if (this.imagePaths.length > 1 ||
+        this.imagePaths.any(
+          (path) => !RegExp(
+            '^listing-images/${RegExp.escape(id)}/[A-Za-z0-9_-]{1,128}\$',
+          ).hasMatch(path),
+        )) {
+      throw ArgumentError.value(
+        imagePaths,
+        'imagePaths',
+        'Invalid listing images.',
+      );
+    }
   }
 
   final String id;
@@ -54,7 +69,10 @@ final class Listing {
   final List<String> tags;
   final PickupCoordinates approximateMapCoordinates;
   final DateTime createdAt;
+  final List<String> imagePaths;
   final ListingStatus status;
+
+  String get pickupAreaKey => normalizeTurkishText(pickupArea);
 
   bool get isAvailable => status == ListingStatus.available;
 }
@@ -67,7 +85,7 @@ final class ListingDraft {
     required this.category,
     required this.condition,
     required List<String> tags,
-  }) : tags = List.unmodifiable(tags) {
+  }) : tags = List.unmodifiable(tags.map((tag) => tag.trim())) {
     _validateListingFields(title, description, pickupArea, this.tags);
   }
 

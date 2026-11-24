@@ -8,8 +8,7 @@ abstract interface class ListingImageStorage {
     required String contentType,
   });
 
-  Future<void> deleteImage({
-    required String listingId,
-    required String imageId,
-  });
+  Future<void> deleteImage({required String path});
+
+  Future<String> getDownloadUrl(String path);
 }

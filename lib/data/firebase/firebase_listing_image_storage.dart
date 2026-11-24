@@ -45,13 +45,22 @@ final class FirebaseListingImageStorage implements ListingImageStorage {
   }
 
   @override
-  Future<void> deleteImage({
-    required String listingId,
-    required String imageId,
-  }) {
-    _validatePathSegment(listingId, 'listingId');
-    _validatePathSegment(imageId, 'imageId');
-    return _storage.ref('listing-images/$listingId/$imageId').delete();
+  Future<void> deleteImage({required String path}) {
+    _validateStoragePath(path);
+    return _storage.ref(path).delete();
+  }
+
+  @override
+  Future<String> getDownloadUrl(String path) {
+    _validateStoragePath(path);
+    return _storage.ref(path).getDownloadURL();
+  }
+
+  void _validateStoragePath(String path) {
+    if (!RegExp(r'^listing-images/[A-Za-z0-9_-]{1,128}/[A-Za-z0-9_-]{1,128}$')
+        .hasMatch(path)) {
+      throw ArgumentError.value(path, 'path', 'Invalid listing image path.');
+    }
   }
 
   void _validatePathSegment(String value, String name) {

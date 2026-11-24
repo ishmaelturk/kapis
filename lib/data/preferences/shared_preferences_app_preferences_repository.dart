@@ -105,6 +105,9 @@ final class SharedPreferencesAppPreferencesRepository
     );
   }
 
+  @override
+  Future<void> reset() => _preferences.remove(_storageKey);
+
   UserRoleMode _roleModeFromName(String name) {
     for (final roleMode in UserRoleMode.values) {
       if (roleMode.name == name) {

@@ -3,19 +3,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapis/app.dart';
 import 'package:kapis/application/app_preferences_controller.dart';
 import 'package:kapis/domain/models/app_preferences.dart';
+import 'package:kapis/domain/models/user_account.dart';
 import 'package:kapis/domain/repositories/app_preferences_repository.dart';
 import 'package:kapis/features/auth/presentation/auth_screen.dart';
 import 'package:kapis/features/listings/presentation/listing_discovery_screen.dart';
 import 'package:kapis/features/listings/presentation/listing_form_screen.dart';
 import 'package:kapis/features/listings/presentation/my_listings_screen.dart';
+import 'package:kapis/features/listings/presentation/my_reservations_screen.dart';
+import 'package:kapis/features/legal/presentation/legal_information_screen.dart';
 import 'package:kapis/features/settings/presentation/accessibility_settings_screen.dart';
 import 'package:kapis/features/settings/presentation/app_settings_screen.dart';
 import 'package:kapis/features/settings/presentation/settings_screen.dart';
+import 'package:kapis/firebase/firebase_providers.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {
+  testWidgets('Material localization is set to Turkish', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_buildApp(_MemoryPreferencesRepository()));
+
+    final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(app.supportedLocales, const [Locale('tr')]);
+    expect(
+      app.localizationsDelegates,
+      contains(GlobalMaterialLocalizations.delegate),
+    );
+  });
+
   testWidgets('Discovery is the app index page', (WidgetTester tester) async {
     await tester.pumpWidget(_buildApp(_MemoryPreferencesRepository()));
+    await tester.pumpAndSettle();
 
     expect(find.byType(ListingDiscoveryScreen), findsOneWidget);
     expect(find.text('Yakınındaki bağışlar'), findsOneWidget);
@@ -46,6 +64,10 @@ void main() {
       findsOneWidget,
     );
     expect(
+      find.descendant(of: drawer, matching: find.text('Ayırttıklarım')),
+      findsOneWidget,
+    );
+    expect(
       find.descendant(of: drawer, matching: find.text('Ayarlar')),
       findsOneWidget,
     );
@@ -55,6 +77,7 @@ void main() {
     ('Bağışları keşfet', ListingDiscoveryScreen),
     ('Eşya bağışla', ListingFormScreen),
     ('Bağışlarım', MyListingsScreen),
+    ('Ayırttıklarım', MyReservationsScreen),
     ('Ayarlar', SettingsScreen),
   ]) {
     testWidgets('Drawer opens $label', (WidgetTester tester) async {
@@ -86,7 +109,7 @@ void main() {
     expect(find.text('Hesap ayarları'), findsOneWidget);
     expect(find.text('Uygulama ayarları'), findsOneWidget);
     expect(find.text('Erişilebilirlik ayarları'), findsOneWidget);
-    expect(find.byType(Card), findsNWidgets(3));
+    expect(find.byType(Card), findsNWidgets(4));
     expect(
       tester.getTopLeft(find.text('Hesap ayarları')).dy,
       lessThan(tester.getTopLeft(find.text('Uygulama ayarları')).dy),
@@ -99,13 +122,21 @@ void main() {
     await tester.tap(find.text('Uygulama ayarları'));
     await tester.pumpAndSettle();
     expect(find.byType(AppSettingsScreen), findsOneWidget);
-    await tester.pageBack();
+    await tester.tap(find.byIcon(Icons.arrow_back));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Erişilebilirlik ayarları'));
     await tester.pumpAndSettle();
     expect(find.byType(AccessibilitySettingsScreen), findsOneWidget);
-    await tester.pageBack();
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Gizlilik ve kullanım koşulları'));
+    await tester.tap(find.text('Gizlilik ve kullanım koşulları'));
+    await tester.pumpAndSettle();
+    expect(find.byType(LegalInformationScreen), findsOneWidget);
+    expect(find.text('Gizlilik bildirimi'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.arrow_back));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Hesap ayarları'));
@@ -222,6 +253,15 @@ Widget _buildApp(_MemoryPreferencesRepository preferences) {
   return ProviderScope(
     overrides: [
       appPreferencesRepositoryProvider.overrideWithValue(preferences),
+      authStateProvider.overrideWith(
+        (ref) => Stream.value(
+          const UserAccount(
+            id: 'test-user',
+            email: 'test@example.com',
+            emailVerified: true,
+          ),
+        ),
+      ),
     ],
     child: const KapisApp(),
   );
@@ -236,5 +276,10 @@ final class _MemoryPreferencesRepository implements AppPreferencesRepository {
   @override
   Future<void> save(AppPreferences preferences) async {
     value = preferences;
+  }
+
+  @override
+  Future<void> reset() async {
+    value = const AppPreferences();
   }
 }

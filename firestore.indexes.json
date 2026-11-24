@@ -37,7 +37,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "pickupArea",
+          "fieldPath": "pickupAreaKey",
           "order": "ASCENDING"
         },
         {

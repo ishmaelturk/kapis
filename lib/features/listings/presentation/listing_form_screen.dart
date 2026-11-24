@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/services.dart';
@@ -5,16 +7,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../application/user_error_message.dart';
 import '../../../domain/models/listing.dart';
 import '../../../domain/models/listing_match.dart';
 import '../../../domain/models/pickup_coordinates.dart';
 import '../../../domain/repositories/auth_repository.dart';
+import '../../../domain/services/photo_metadata_sanitizer.dart';
 import '../../../firebase/firebase_providers.dart';
 import '../../../firebase/firebase_runtime_config.dart';
+import '../../auth/presentation/auth_screen.dart';
+import 'listing_photo_view.dart';
 import 'pickup_location_picker_screen.dart';
 
 class ListingFormScreen extends ConsumerStatefulWidget {
-  const ListingFormScreen({super.key});
+  const ListingFormScreen({this.listing, super.key});
+
+  final Listing? listing;
 
   @override
   ConsumerState<ListingFormScreen> createState() => _ListingFormScreenState();
@@ -34,8 +42,25 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
   String? _suggestionPhotoMimeType;
   bool _isSaving = false;
   bool _isSuggesting = false;
+  bool _isLoadingEditCoordinates = false;
   String? _errorMessage;
   String? _suggestionMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    final listing = widget.listing;
+    if (listing != null) {
+      _titleController.text = listing.title;
+      _descriptionController.text = listing.description;
+      _areaController.text = listing.pickupArea;
+      _tagsController.text = listing.tags.join(', ');
+      _category = listing.category;
+      _condition = listing.condition;
+      _isLoadingEditCoordinates = true;
+      unawaited(_loadExactPickupCoordinates());
+    }
+  }
 
   @override
   void dispose() {
@@ -61,6 +86,33 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
     }
   }
 
+  Future<void> _loadExactPickupCoordinates() async {
+    try {
+      final repository = await ref.read(handoverRepositoryProvider.future);
+      final coordinates = await repository.getPickupCoordinates(
+        widget.listing!.id,
+      );
+      if (mounted) {
+        setState(() {
+          _pickupCoordinates = coordinates;
+          _isLoadingEditCoordinates = false;
+        });
+      }
+    } on FirebaseConfigurationException catch (error) {
+      _showError(userMessageFor(error));
+    } on AuthenticationRequiredException catch (error) {
+      _showError(userMessageFor(error));
+    } on FirebaseException catch (error) {
+      _showError(userMessageFor(error));
+    } on StateError catch (error) {
+      _showError(userMessageFor(error));
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingEditCoordinates = false);
+      }
+    }
+  }
+
   Future<void> _selectSuggestionPhoto() async {
     try {
       final file = await ImagePicker().pickImage(
@@ -81,14 +133,17 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
         _showError('Fotoğraf en fazla 4 MiB olmalı.');
         return;
       }
+      final sanitizedBytes = sanitizePhoto(bytes);
       setState(() {
-        _suggestionPhoto = bytes;
-        _suggestionPhotoMimeType = mimeType;
+        _suggestionPhoto = sanitizedBytes;
+        _suggestionPhotoMimeType = 'image/jpeg';
         _errorMessage = null;
         _suggestionMessage = null;
       });
     } on PlatformException catch (error) {
-      _showError(error.message ?? error.code);
+      _showError(userMessageFor(error));
+    } on FormatException catch (error) {
+      _showError(userMessageFor(error));
     }
   }
 
@@ -132,15 +187,15 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
             : 'Öneri hazır. Yayınlamadan önce kontrol edebilirsin.';
       });
     } on ArgumentError catch (error) {
-      _showError(error.message?.toString() ?? 'İlan bilgilerini kontrol et.');
+      _showError(userMessageFor(error));
     } on FirebaseConfigurationException catch (error) {
-      _showError(error.toString());
+      _showError(userMessageFor(error));
     } on FirebaseAIException catch (error) {
-      _showError(error.message);
+      _showError(userMessageFor(error));
     } on FirebaseAISdkException catch (error) {
-      _showError(error.message);
+      _showError(userMessageFor(error));
     } on FirebaseException catch (error) {
-      _showError(error.message ?? error.code);
+      _showError(userMessageFor(error));
     } finally {
       if (mounted) {
         setState(() => _isSuggesting = false);
@@ -165,36 +220,77 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
 
     try {
       final repository = await ref.read(listingRepositoryProvider.future);
-      final listing = await repository.create(
-        ListingDraft(
-          title: _titleController.text.trim(),
-          description: _descriptionController.text.trim(),
-          pickupArea: _areaController.text.trim(),
-          category: _category,
-          condition: _condition,
-          tags: _tagsController.text
-              .split(',')
-              .map((tag) => tag.trim())
-              .where((tag) => tag.isNotEmpty)
-              .toList(growable: false),
-        ),
-        pickupCoordinates: pickupCoordinates,
+      final draft = ListingDraft(
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim(),
+        pickupArea: _areaController.text.trim(),
+        category: _category,
+        condition: _condition,
+        tags: _tagsController.text
+            .split(',')
+            .map((tag) => tag.trim())
+            .where((tag) => tag.isNotEmpty)
+            .toList(growable: false),
       );
+      final listing = widget.listing == null
+          ? await repository.create(draft, pickupCoordinates: pickupCoordinates)
+          : await repository.update(
+              widget.listing!.id,
+              draft,
+              pickupCoordinates: pickupCoordinates,
+            );
+      final photo = _suggestionPhoto;
+      if (photo != null) {
+        try {
+          final storage = await ref.read(listingImageStorageProvider.future);
+          final path = await storage.uploadImage(
+            listingId: listing.id,
+            imageId: 'primary',
+            bytes: photo,
+            contentType: 'image/jpeg',
+          );
+          await repository.updateImagePaths(listing.id, [path]);
+        } on FirebaseConfigurationException {
+          _handlePhotoFailure(
+            'Fotoğraf yüklenemedi: Firebase ayarları tamamlanmamış.',
+          );
+          return;
+        } on FirebaseException {
+          _handlePhotoFailure(
+            'Fotoğraf yüklenemedi. Bağlantını kontrol edip tekrar dene.',
+          );
+          return;
+        } on ArgumentError {
+          _handlePhotoFailure('Fotoğraf biçimi veya boyutu desteklenmiyor.');
+          return;
+        } on StateError {
+          _handlePhotoFailure(
+            'İlan artık düzenlenemediği için fotoğraf eklenemedi.',
+          );
+          return;
+        }
+      }
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('“${listing.title}” bağış ilanı yayınlandı.')),
+        SnackBar(
+          content: Text(
+            widget.listing == null
+                ? '“${listing.title}” bağış ilanı yayınlandı.'
+                : '“${listing.title}” ilanı güncellendi.',
+          ),
+        ),
       );
       Navigator.of(context).pop();
     } on FirebaseConfigurationException catch (error) {
-      _showError(error.toString());
+      _showError(userMessageFor(error));
     } on AuthenticationRequiredException catch (error) {
-      _showError('$error Lütfen önce hesabına giriş yap.');
+      _showError(userMessageFor(error));
     } on FirebaseException catch (error) {
-      _showError(error.message ?? error.code);
+      _showError(userMessageFor(error));
     } on StateError catch (error) {
-      _showError(error.message);
+      _showError(userMessageFor(error));
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -208,10 +304,72 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
     }
   }
 
+  void _handlePhotoFailure(String message) {
+    if (!mounted) {
+      return;
+    }
+    if (widget.listing == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'İlan yayınlandı ancak fotoğraf yüklenemedi. Daha sonra '
+            'Bağışlarım bölümünden tekrar deneyebilirsin.',
+          ),
+        ),
+      );
+      Navigator.of(context).pop();
+      return;
+    }
+    _showError(message);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authStateProvider);
+    if (authState.hasError) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Bağış ilanı')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text('Hesap bilgileri yüklenemedi. Daha sonra tekrar dene.'),
+          ),
+        ),
+      );
+    }
+    if (!authState.hasValue) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Bağış ilanı')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (authState.value == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Bağış ilanı')),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Bağış ilanı oluşturmak için giriş yap.'),
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
+                ),
+                child: const Text('Giriş yap'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Bağış ilanı oluştur')),
+      appBar: AppBar(
+        title: Text(
+          widget.listing == null ? 'Bağış ilanı oluştur' : 'İlanı düzenle',
+        ),
+      ),
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -251,10 +409,13 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
                 icon: const Icon(Icons.photo_outlined),
                 label: Text(
                   _suggestionPhoto == null
-                      ? 'AI önerisi için isteğe bağlı fotoğraf ekle'
+                      ? 'İlan fotoğrafı ekle (isteğe bağlı)'
                       : 'Fotoğrafı değiştir',
                 ),
               ),
+              if (_suggestionPhoto == null &&
+                  widget.listing?.imagePaths.isNotEmpty == true)
+                ListingPhotoView(listing: widget.listing!, height: 140),
               if (_suggestionPhoto case final photo?) ...[
                 const SizedBox(height: 8),
                 Row(
@@ -280,8 +441,9 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
               ],
               const SizedBox(height: 8),
               const Text(
-                'İlan metni ve seçtiğin fotoğraf öneri için Firebase AI’ya '
-                'gönderilir. Teslimat konumu gönderilmez.',
+                'Seçtiğin fotoğraf ilanda görünür. AI önerisi istediğinde '
+                'fotoğraf ve ilan metni Firebase AI’ya gönderilir; teslimat '
+                'konumu gönderilmez.',
               ),
               OutlinedButton.icon(
                 onPressed: _isSaving || _isSuggesting ? null : _suggestListing,
@@ -358,10 +520,14 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
               ),
               const SizedBox(height: 16),
               OutlinedButton.icon(
-                onPressed: _isSaving ? null : _selectPickupPoint,
+                onPressed: _isSaving || _isLoadingEditCoordinates
+                    ? null
+                    : _selectPickupPoint,
                 icon: const Icon(Icons.map_outlined),
                 label: Text(
-                  _pickupCoordinates == null
+                  _isLoadingEditCoordinates
+                      ? 'Kesin teslim noktası yükleniyor...'
+                      : _pickupCoordinates == null
                       ? 'Teslim alma pinini haritada seç'
                       : 'Teslim alma pini seçildi',
                 ),
@@ -375,10 +541,16 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
               ],
               const SizedBox(height: 20),
               FilledButton(
-                onPressed: _isSaving ? null : _submit,
+                onPressed: _isSaving || _isLoadingEditCoordinates
+                    ? null
+                    : _submit,
                 child: _isSaving
                     ? const CircularProgressIndicator()
-                    : const Text('Ücretsiz ilanı yayınla'),
+                    : Text(
+                        widget.listing == null
+                            ? 'Ücretsiz ilanı yayınla'
+                            : 'İlanı güncelle',
+                      ),
               ),
             ],
           ),
