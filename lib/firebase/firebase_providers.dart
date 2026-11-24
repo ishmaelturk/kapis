@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_ai/firebase_ai.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -8,10 +9,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/firebase/firebase_auth_repository.dart';
 import '../data/firebase/firebase_handover_repository.dart';
 import '../data/firebase/firebase_listing_image_storage.dart';
+import '../data/firebase/firebase_listing_matchmaker.dart';
 import '../data/firebase/firebase_listing_repository.dart';
 import '../domain/repositories/auth_repository.dart';
 import '../domain/repositories/handover_repository.dart';
 import '../domain/repositories/listing_image_storage.dart';
+import '../domain/repositories/listing_matchmaker.dart';
 import '../domain/repositories/listing_repository.dart';
 import '../domain/services/student_email_domain_validator.dart';
 import 'firebase_runtime_config.dart';
@@ -86,4 +89,24 @@ final listingImageStorageProvider = FutureProvider<ListingImageStorage>((
 ) async {
   final storage = await ref.watch(firebaseStorageProvider.future);
   return FirebaseListingImageStorage(storage);
+});
+
+final listingMatchmakerProvider = Provider<ListingMatchmaker>((ref) {
+  return FirebaseListingMatchmaker((content) async {
+    final app = await ref.read(firebaseAppProvider.future);
+    final model = FirebaseAI.googleAI(app: app).generativeModel(
+      model: const String.fromEnvironment(
+        'KAPIS_FIREBASE_AI_MODEL',
+        defaultValue: 'gemini-2.5-flash',
+      ),
+      generationConfig: GenerationConfig(
+        responseMimeType: 'application/json',
+        temperature: 0.2,
+        maxOutputTokens: 1400,
+      ),
+    );
+    final response = await model.generateContent([content]);
+    return response.text ??
+        (throw const FormatException('AI returned an empty response.'));
+  });
 });

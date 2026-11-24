@@ -1,9 +1,11 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../application/listing_providers.dart';
 import '../../../domain/models/listing.dart';
+import '../../../domain/models/listing_match.dart';
 import '../../../domain/models/pickup_coordinates.dart';
 import '../../../domain/repositories/auth_repository.dart';
 import '../../../firebase/firebase_providers.dart';
@@ -22,13 +24,57 @@ class ListingDiscoveryScreen extends ConsumerStatefulWidget {
 class _ListingDiscoveryScreenState
     extends ConsumerState<ListingDiscoveryScreen> {
   final _areaController = TextEditingController();
+  final _needsController = TextEditingController();
   String? _areaFilter;
   String? _actionError;
+  ListingMatchResult? _matchResult;
+  bool _isRanking = false;
 
   @override
   void dispose() {
     _areaController.dispose();
+    _needsController.dispose();
     super.dispose();
+  }
+
+  Future<void> _rankListings(List<Listing> items) async {
+    final needs = _needsController.text.trim();
+    final areaFilter = _areaFilter;
+    if (needs.isEmpty) {
+      _setActionError('Önce aradığın eşya türünü kısaca yaz.');
+      return;
+    }
+    setState(() {
+      _isRanking = true;
+      _actionError = null;
+    });
+    try {
+      final result = await ref
+          .read(listingMatchmakerProvider)
+          .rankListings(receiverNeeds: needs, candidates: items);
+      if (mounted) {
+        if (_needsController.text.trim() == needs &&
+            _areaFilter == areaFilter) {
+          setState(() => _matchResult = result);
+        }
+      }
+    } on ArgumentError catch (error) {
+      _setActionError(
+        error.message?.toString() ?? 'İhtiyaç notunu kontrol et.',
+      );
+    } on FirebaseConfigurationException catch (error) {
+      _setActionError(error.toString());
+    } on FirebaseAIException catch (error) {
+      _setActionError(error.message);
+    } on FirebaseAISdkException catch (error) {
+      _setActionError(error.message);
+    } on FirebaseException catch (error) {
+      _setActionError(error.message ?? error.code);
+    } finally {
+      if (mounted) {
+        setState(() => _isRanking = false);
+      }
+    }
   }
 
   Future<void> _reserve(Listing listing) async {
@@ -97,6 +143,23 @@ class _ListingDiscoveryScreenState
               onSubmitted: (_) => _applyAreaFilter(),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: TextField(
+              controller: _needsController,
+              maxLength: 200,
+              decoration: const InputDecoration(
+                labelText: 'Aradığın eşya (isteğe bağlı)',
+                hintText: 'Örn. küçük çalışma masası',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (_) {
+                if (_matchResult != null) {
+                  setState(() => _matchResult = null);
+                }
+              },
+            ),
+          ),
           if (_actionError case final message?)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -123,21 +186,62 @@ class _ListingDiscoveryScreenState
                     ),
                   );
                 }
+                final scores = {
+                  for (final match in _matchResult?.matches ?? <ListingMatch>[])
+                    match.listingId: match,
+                };
+                final orderedItems = _matchResult == null
+                    ? items
+                    : [
+                        for (final match in _matchResult!.matches)
+                          for (final listing in items)
+                            if (listing.id == match.listingId) listing,
+                      ];
                 return Column(
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text(
+                            'AI en yeni 15 uygun ilanı en fazla 20 saniye '
+                            'içinde sıralar; kullanılamazsa yerel eşleşme '
+                            'kullanılır.',
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _isRanking
+                                ? null
+                                : () => _rankListings(items),
+                            icon: const Icon(Icons.auto_awesome_outlined),
+                            label: Text(
+                              _isRanking
+                                  ? 'İlanlar sıralanıyor...'
+                                  : 'İhtiyacıma göre sırala',
+                            ),
+                          ),
+                          if (_matchResult?.usedFallback ?? false)
+                            const Text(
+                              'AI kullanılamadı; yerel eşleştirme sonuçları '
+                              'gösteriliyor.',
+                            ),
+                        ],
+                      ),
+                    ),
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton.icon(
-                        onPressed: () => _openMap(items),
+                        onPressed: () => _openMap(orderedItems),
                         icon: const Icon(Icons.map_outlined),
                         label: const Text('Haritada gör'),
                       ),
                     ),
                     Expanded(
                       child: ListView.builder(
-                        itemCount: items.length,
+                        itemCount: orderedItems.length,
                         itemBuilder: (context, index) {
-                          final listing = items[index];
+                          final listing = orderedItems[index];
+                          final match = scores[listing.id];
                           return Card(
                             margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                             child: Padding(
@@ -153,6 +257,12 @@ class _ListingDiscoveryScreenState
                                   ),
                                   const SizedBox(height: 4),
                                   Text(listing.description),
+                                  if (match != null) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '${match.score}/100 · ${match.reason}',
+                                    ),
+                                  ],
                                   const SizedBox(height: 8),
                                   Text(
                                     '${listing.category.label} · '
@@ -189,6 +299,7 @@ class _ListingDiscoveryScreenState
     setState(() {
       _areaFilter = area.isEmpty ? null : area;
       _actionError = null;
+      _matchResult = null;
     });
   }
 }

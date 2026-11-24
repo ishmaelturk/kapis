@@ -32,6 +32,8 @@
 	<string>Kapış checks that a receiver is near the selected pickup point.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Kapış scans the QR code used to confirm an item handover.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Kapış lets you select an optional item photo for an AI listing suggestion.</string>
 	<!--
 	When developing features that access protected resources (e.g. camera,
 	microphone, photos) on macOS, launching via "flutter run" from an IDE or
