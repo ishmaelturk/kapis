@@ -28,6 +28,61 @@ class _WelcomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Kapış')),
+      drawer: Drawer(
+        child: SafeArea(
+          child: Column(
+            children: [
+              DrawerHeader(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Icon(
+                        Icons.volunteer_activism_outlined,
+                        color: Theme.of(context).colorScheme.primary,
+                        size: 36,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Kapış',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const Text('Ücretsiz eşya paylaşımı'),
+                    ],
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.search),
+                title: const Text('Bağışları keşfet'),
+                onTap: () =>
+                    _openDrawerPage(context, const ListingDiscoveryScreen()),
+              ),
+              ListTile(
+                leading: const Icon(Icons.add_circle_outline),
+                title: const Text('Eşya bağışla'),
+                onTap: () =>
+                    _openDrawerPage(context, const ListingFormScreen()),
+              ),
+              ListTile(
+                leading: const Icon(Icons.inventory_2_outlined),
+                title: const Text('Bağışlarım'),
+                onTap: () => _openDrawerPage(context, const MyListingsScreen()),
+              ),
+              ListTile(
+                leading: const Icon(Icons.account_circle_outlined),
+                title: const Text('Hesap / öğrenci rozeti'),
+                onTap: () => _openDrawerPage(context, const AuthScreen()),
+              ),
+            ],
+          ),
+        ),
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
@@ -91,5 +146,10 @@ class _WelcomeScreen extends StatelessWidget {
 
   void _openPage(BuildContext context, Widget page) {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
+  }
+
+  void _openDrawerPage(BuildContext context, Widget page) {
+    Navigator.of(context).pop();
+    _openPage(context, page);
   }
 }
