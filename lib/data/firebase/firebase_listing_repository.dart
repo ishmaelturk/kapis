@@ -1,13 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../domain/models/listing.dart';
 import '../../domain/models/pickup_coordinates.dart';
+import '../../domain/repositories/auth_repository.dart';
 import '../../domain/repositories/listing_repository.dart';
 import 'listing_firestore_mapper.dart';
 
 final class FirebaseListingRepository implements ListingRepository {
   FirebaseListingRepository(
-    this._firestore, [
+    this._firestore,
+    this._auth, [
     this._mapper = const ListingFirestoreMapper(),
   ]) : _listings = _firestore.collection('listings');
 
@@ -15,16 +18,33 @@ final class FirebaseListingRepository implements ListingRepository {
   static final _documentIdPattern = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
 
   final FirebaseFirestore _firestore;
+  final FirebaseAuth _auth;
   final ListingFirestoreMapper _mapper;
   final CollectionReference<Map<String, dynamic>> _listings;
 
   @override
-  Future<void> create(
-    Listing listing, {
+  Future<Listing> create(
+    ListingDraft draft, {
     required PickupCoordinates pickupCoordinates,
   }) async {
-    _validateDocumentId(listing.id);
-    final listingReference = _listings.doc(listing.id);
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw const AuthenticationRequiredException();
+    }
+
+    final listingReference = _listings.doc();
+    final listing = Listing(
+      id: listingReference.id,
+      donorId: user.uid,
+      title: draft.title,
+      description: draft.description,
+      pickupArea: draft.pickupArea,
+      category: draft.category,
+      condition: draft.condition,
+      tags: draft.tags,
+      approximateMapCoordinates: pickupCoordinates.approximateMapCoordinates,
+      createdAt: DateTime.now().toUtc(),
+    );
     final pickupReference = listingReference
         .collection('private')
         .doc('pickup');
@@ -43,6 +63,9 @@ final class FirebaseListingRepository implements ListingRepository {
         'longitude': pickupCoordinates.longitude,
       });
     });
+
+    return await findById(listing.id) ??
+        (throw StateError('The created listing could not be reloaded.'));
   }
 
   @override
@@ -79,6 +102,29 @@ final class FirebaseListingRepository implements ListingRepository {
   }
 
   @override
+  Stream<List<Listing>> watchMyListings({int limit = 100}) {
+    if (limit < 1 || limit > _maximumPageSize) {
+      throw RangeError.range(limit, 1, _maximumPageSize, 'limit');
+    }
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw const AuthenticationRequiredException();
+    }
+    return _listings
+        .where('donorId', isEqualTo: user.uid)
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map(
+          (snapshot) => List.unmodifiable(
+            snapshot.docs.map(
+              (document) => _mapper.fromDocument(document.id, document.data()),
+            ),
+          ),
+        );
+  }
+
+  @override
   Future<Listing?> findById(String id) async {
     _validateDocumentId(id);
     final snapshot = await _listings.doc(id).get();
@@ -87,40 +133,6 @@ final class FirebaseListingRepository implements ListingRepository {
       return null;
     }
     return _mapper.fromDocument(snapshot.id, document);
-  }
-
-  @override
-  Future<PickupCoordinates> getPickupCoordinatesForHandover(
-    String listingId,
-  ) async {
-    _validateDocumentId(listingId);
-    final snapshot = await _listings
-        .doc(listingId)
-        .collection('private')
-        .doc('pickup')
-        .get();
-    final document = snapshot.data();
-    if (!snapshot.exists || document == null) {
-      throw StateError(
-        'Private pickup coordinates are missing for this listing.',
-      );
-    }
-
-    final latitude = document['latitude'];
-    final longitude = document['longitude'];
-    if (latitude is! num || longitude is! num) {
-      throw const FormatException('Stored pickup coordinates are invalid.');
-    }
-    try {
-      return PickupCoordinates(
-        latitude: latitude.toDouble(),
-        longitude: longitude.toDouble(),
-      );
-    } on ArgumentError {
-      throw const FormatException(
-        'Stored pickup coordinates are outside valid ranges.',
-      );
-    }
   }
 
   void _validateDocumentId(String id) {

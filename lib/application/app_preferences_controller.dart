@@ -30,9 +30,7 @@ final class AppPreferencesController extends AsyncNotifier<AppPreferences> {
   }
 
   Future<void> setOnboardingComplete(bool complete) {
-    return _update(
-      (current) => current.copyWith(onboardingComplete: complete),
-    );
+    return _update((current) => current.copyWith(onboardingComplete: complete));
   }
 
   Future<void> cachePickupCoordinates(PickupCoordinates coordinates) {
@@ -48,9 +46,7 @@ final class AppPreferencesController extends AsyncNotifier<AppPreferences> {
   }
 
   Future<void> cacheStudentBadge(bool verified) {
-    return _update(
-      (current) => current.copyWith(studentBadgeCached: verified),
-    );
+    return _update((current) => current.copyWith(studentBadgeCached: verified));
   }
 
   Future<void> _update(

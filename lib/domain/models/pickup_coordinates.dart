@@ -6,7 +6,11 @@ final class PickupCoordinates {
     required double longitude,
   }) {
     if (!latitude.isFinite || latitude < -90 || latitude > 90) {
-      throw ArgumentError.value(latitude, 'latitude', 'Must be between -90 and 90.');
+      throw ArgumentError.value(
+        latitude,
+        'latitude',
+        'Must be between -90 and 90.',
+      );
     }
     if (!longitude.isFinite || longitude < -180 || longitude > 180) {
       throw ArgumentError.value(
@@ -20,4 +24,11 @@ final class PickupCoordinates {
 
   final double latitude;
   final double longitude;
+
+  PickupCoordinates get approximateMapCoordinates {
+    return PickupCoordinates(
+      latitude: (latitude * 100).roundToDouble() / 100,
+      longitude: (longitude * 100).roundToDouble() / 100,
+    );
+  }
 }

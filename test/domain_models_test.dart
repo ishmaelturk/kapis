@@ -28,6 +28,10 @@ void main() {
         category: ListingCategory.tablesAndDesks,
         condition: ItemCondition.good,
         tags: tags,
+        approximateMapCoordinates: PickupCoordinates(
+          latitude: 41.0,
+          longitude: 29.0,
+        ),
         createdAt: DateTime.utc(2026),
       );
       tags.add('extra');
@@ -48,6 +52,10 @@ void main() {
           category: ListingCategory.tablesAndDesks,
           condition: ItemCondition.good,
           tags: const [],
+          approximateMapCoordinates: PickupCoordinates(
+            latitude: 41.0,
+            longitude: 29.0,
+          ),
           createdAt: DateTime.utc(2026),
         ),
         throwsArgumentError,

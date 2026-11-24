@@ -14,6 +14,10 @@ service cloud.firestore {
       return /databases/$(database)/documents/listings/$(listingId)/private/reservation;
     }
 
+    function handoverCodePath(listingId) {
+      return /databases/$(database)/documents/listings/$(listingId)/private/handover;
+    }
+
     function isOwner(listingId) {
       return signedIn() &&
         get(listingPath(listingId)).data.donorId == request.auth.uid;
@@ -36,6 +40,8 @@ service cloud.firestore {
           'category',
           'condition',
           'tags',
+          'approximateLatitude',
+          'approximateLongitude',
           'status',
           'createdAt'
         ]) &&
@@ -47,6 +53,8 @@ service cloud.firestore {
           'category',
           'condition',
           'tags',
+          'approximateLatitude',
+          'approximateLongitude',
           'status',
           'createdAt'
         ]) &&
@@ -66,6 +74,12 @@ service cloud.firestore {
         ] &&
         data.condition in ['likeNew', 'good', 'fair'] &&
         data.tags is list && data.tags.size() <= 10 &&
+        data.approximateLatitude is number &&
+        data.approximateLatitude >= -90 &&
+        data.approximateLatitude <= 90 &&
+        data.approximateLongitude is number &&
+        data.approximateLongitude >= -180 &&
+        data.approximateLongitude <= 180 &&
         data.status in ['available', 'reserved', 'handedOver', 'withdrawn'] &&
         data.createdAt is timestamp;
     }
@@ -79,6 +93,18 @@ service cloud.firestore {
         getAfter(reservationPath(listingId)).data.receiverId == request.auth.uid;
     }
 
+    function validHandover(listingId) {
+      return signedIn() &&
+        resource.data.status == 'reserved' &&
+        request.resource.data.status == 'handedOver' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        existsAfter(reservationPath(listingId)) &&
+        getAfter(reservationPath(listingId)).data.receiverId == request.auth.uid &&
+        getAfter(reservationPath(listingId)).data.handoverToken ==
+          get(handoverCodePath(listingId)).data.token &&
+        getAfter(reservationPath(listingId)).data.confirmedAt == request.time;
+    }
+
     match /listings/{listingId} {
       allow get, list: if true;
 
@@ -89,6 +115,7 @@ service cloud.firestore {
         request.resource.data.createdAt == request.time;
 
       allow update: if validReservation(listingId) ||
+        validHandover(listingId) ||
         (signedIn() &&
           resource.data.donorId == request.auth.uid &&
           request.resource.data.donorId == resource.data.donorId &&
@@ -100,6 +127,8 @@ service cloud.firestore {
             'category',
             'condition',
             'tags',
+            'approximateLatitude',
+            'approximateLongitude',
             'status'
           ]) &&
           resource.data.status == 'available' &&
@@ -134,7 +163,32 @@ service cloud.firestore {
             get(listingPath(listingId)).data.donorId &&
           getAfter(listingPath(listingId)).data.status == 'reserved';
 
-        allow update, delete: if false;
+        allow update: if signedIn() &&
+          resource.data.receiverId == request.auth.uid &&
+          !resource.data.keys().hasAny(['handoverToken', 'confirmedAt']) &&
+          request.resource.data.receiverId == resource.data.receiverId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'handoverToken',
+            'confirmedAt'
+          ]) &&
+          request.resource.data.handoverToken ==
+            get(handoverCodePath(listingId)).data.token &&
+          request.resource.data.confirmedAt == request.time;
+
+        allow delete: if false;
+      }
+
+      match /private/handover {
+        allow read: if isOwner(listingId);
+
+        allow create, update: if isOwner(listingId) &&
+          get(listingPath(listingId)).data.status == 'reserved' &&
+          request.resource.data.keys().hasOnly(['token', 'createdAt']) &&
+          request.resource.data.token is string &&
+          request.resource.data.token.size() == 43 &&
+          request.resource.data.createdAt == request.time;
+
+        allow delete: if false;
       }
     }
   }

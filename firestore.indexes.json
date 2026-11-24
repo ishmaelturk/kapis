@@ -19,6 +19,20 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "donorId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "status",
           "order": "ASCENDING"
         },

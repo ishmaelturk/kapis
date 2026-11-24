@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapis/data/firebase/listing_firestore_mapper.dart';
 import 'package:kapis/domain/models/listing.dart';
+import 'package:kapis/domain/models/pickup_coordinates.dart';
 
 void main() {
   const mapper = ListingFirestoreMapper();
@@ -14,6 +15,10 @@ void main() {
     category: ListingCategory.tablesAndDesks,
     condition: ItemCondition.good,
     tags: const ['desk'],
+    approximateMapCoordinates: PickupCoordinates(
+      latitude: 41.0,
+      longitude: 29.0,
+    ),
     createdAt: DateTime.utc(2026, 11, 24),
   );
 

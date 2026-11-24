@@ -6,9 +6,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/firebase/firebase_auth_repository.dart';
+import '../data/firebase/firebase_handover_repository.dart';
 import '../data/firebase/firebase_listing_image_storage.dart';
 import '../data/firebase/firebase_listing_repository.dart';
 import '../domain/repositories/auth_repository.dart';
+import '../domain/repositories/handover_repository.dart';
 import '../domain/repositories/listing_image_storage.dart';
 import '../domain/repositories/listing_repository.dart';
 import '../domain/services/student_email_domain_validator.dart';
@@ -56,17 +58,27 @@ final authRepositoryProvider = FutureProvider<AuthRepository>((ref) async {
   final authFuture = ref.watch(firebaseAuthProvider.future);
   final domainValidator = ref.watch(studentEmailDomainValidatorProvider);
   final auth = await authFuture;
-  return FirebaseAuthRepository(
-    auth,
-    domainValidator,
-  );
+  return FirebaseAuthRepository(auth, domainValidator);
 });
 
 final listingRepositoryProvider = FutureProvider<ListingRepository>((
   ref,
 ) async {
-  final firestore = await ref.watch(firestoreProvider.future);
-  return FirebaseListingRepository(firestore);
+  final firestoreFuture = ref.watch(firestoreProvider.future);
+  final authFuture = ref.watch(firebaseAuthProvider.future);
+  final firestore = await firestoreFuture;
+  final auth = await authFuture;
+  return FirebaseListingRepository(firestore, auth);
+});
+
+final handoverRepositoryProvider = FutureProvider<HandoverRepository>((
+  ref,
+) async {
+  final firestoreFuture = ref.watch(firestoreProvider.future);
+  final authFuture = ref.watch(firebaseAuthProvider.future);
+  final firestore = await firestoreFuture;
+  final auth = await authFuture;
+  return FirebaseHandoverRepository(firestore, auth);
 });
 
 final listingImageStorageProvider = FutureProvider<ListingImageStorage>((

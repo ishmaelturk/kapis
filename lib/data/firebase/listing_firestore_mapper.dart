@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../domain/models/listing.dart';
+import '../../domain/models/pickup_coordinates.dart';
 
 final class ListingFirestoreMapper {
   const ListingFirestoreMapper();
@@ -14,6 +15,8 @@ final class ListingFirestoreMapper {
       'category': listing.category.name,
       'condition': listing.condition.name,
       'tags': listing.tags,
+      'approximateLatitude': listing.approximateMapCoordinates.latitude,
+      'approximateLongitude': listing.approximateMapCoordinates.longitude,
       'status': listing.status.name,
       'createdAt': Timestamp.fromDate(listing.createdAt.toUtc()),
     };
@@ -34,6 +37,11 @@ final class ListingFirestoreMapper {
     if (createdAtValue is! Timestamp) {
       throw const FormatException('Listing creation time is invalid.');
     }
+    final latitude = document['approximateLatitude'];
+    final longitude = document['approximateLongitude'];
+    if (latitude is! num || longitude is! num) {
+      throw const FormatException('Approximate map coordinates are invalid.');
+    }
 
     return Listing(
       id: id,
@@ -52,6 +60,10 @@ final class ListingFirestoreMapper {
         'condition',
       ),
       tags: List<String>.from(tagsValue),
+      approximateMapCoordinates: PickupCoordinates(
+        latitude: latitude.toDouble(),
+        longitude: longitude.toDouble(),
+      ),
       status: _enumFromName(ListingStatus.values, document['status'], 'status'),
       createdAt: createdAtValue.toDate().toUtc(),
     );

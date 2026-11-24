@@ -2,14 +2,14 @@ import '../models/listing.dart';
 import '../models/pickup_coordinates.dart';
 
 abstract interface class ListingRepository {
-  Future<void> create(
-    Listing listing, {
+  Future<Listing> create(
+    ListingDraft draft, {
     required PickupCoordinates pickupCoordinates,
   });
 
   Stream<List<Listing>> watchAvailable({String? pickupArea, int limit = 30});
 
-  Future<Listing?> findById(String id);
+  Stream<List<Listing>> watchMyListings({int limit = 100});
 
-  Future<PickupCoordinates> getPickupCoordinatesForHandover(String listingId);
+  Future<Listing?> findById(String id);
 }

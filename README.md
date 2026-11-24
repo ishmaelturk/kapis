@@ -6,11 +6,11 @@ verification is optional.
 
 ## Project status
 
-The repository currently contains the Flutter app shell. Planned capabilities
-include listing and discovery, direct pickup, optional student verification,
-OpenStreetMap, location-based handover checks, QR handover, and Firebase-backed
-services. Do not treat planned capabilities as implemented until they are
-available in the app.
+The app now includes email/password accounts, free pickup-only listings,
+neighborhood discovery, approximate OpenStreetMap pins, reservation, and QR
+handover. Student verification is optional and uses Firebase email verification
+plus the configured domain suffix list. AI-assisted listing and matching are
+not implemented yet.
 
 The app uses Riverpod for state management. Firebase credentials and generated
 platform configuration are local-only; never commit `.env` files,
@@ -29,7 +29,14 @@ called.
 Enable Email/Password sign-in in the Firebase Authentication console before
 using account operations.
 Public listing documents omit exact pickup coordinates, which are kept in a
-Firestore subdocument protected by `firestore.rules`.
+Firestore subdocument protected by `firestore.rules`. Public map coordinates
+are rounded to two decimal places. The 100 m geofence uses device location and
+reported accuracy as a client-side gate; it is not tamper-proof server
+attestation. The QR token and Firestore rules authorize the handover.
+
+The app uses OpenStreetMap's public tile endpoint for the current map
+implementation. Follow its tile usage policy; use an appropriate tile provider
+or self-hosted tiles if production traffic exceeds that service's limits.
 
 Before using Firebase services, deploy the repository's rules and indexes with
 `firebase deploy --only firestore:rules,firestore:indexes,storage --project <project-id>`.
